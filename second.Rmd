@@ -1,0 +1,220 @@
+---
+title: "DSC 532- Fuel Regression project"
+output: pdf_document
+date: "2025-04-01"
+---
+
+Dataset Overview
+Observations: 1,067 rows (vehicles)
+Variables: 13 columns
+Purpose: Contains fuel consumption and CO2 emissions data for vehicles from the year 2014
+
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Import Libraries
+```{r libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(moments)
+library(nortest)
+library(corrplot)
+library(caret)
+library(tidyr)
+```
+Load the FuelConsumption dataset and preview the first 6 rows of the dataset.
+
+```{r load-data, message=FALSE}
+data <- read.csv("FuelConsumption.csv")
+head(data)
+```
+
+The dataset includes features like:
+
+```{r}
+colnames(data)
+``` 
+Data types and Structure of the dataset.
+```{r}
+str(data)
+```
+
+
+Statistical summary of numerical variables.
+
+From the summary table we can observe that vehicles with larger engines and more cylinders tend to have higher fuel consumption and CO₂ emissions.
+
+Also,there's a wide variety of fuel efficiency, from very eco-friendly models to high-emission vehicles.
+
+```{r}
+summary(data)
+```
+
+ 
+```{r}
+
+colSums(is.na(data))  # This gives you count of NAs per column
+
+```
+
+We have 0 missing values, so we don’t need to impute or remove anything.
+
+```{r}
+
+# Number of duplicated rows
+sum(duplicated(data))
+
+```
+
+There are no duplicated rows in the dataset
+
+```{r}
+
+# Check unique values for categorical columns
+cat_cols <- names(data)[sapply(data, is.character)]
+
+# Apply unique() to each categorical column and name the output
+unique_values <- lapply(data[cat_cols], unique)
+
+# Display the unique values nicely
+unique_values
+
+
+```
+
+The dataset contains a rich variety of categorical features, including 39 car makes, hundreds of models, 16 vehicle classes, multiple transmission types, and 4 fuel types.
+
+All categorical columns are free of spelling errors, case inconsistencies, or data entry mistakes.
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+# Histograms for numeric variables
+numeric_vars <- data %>% select(ENGINESIZE, CYLINDERS, FUELCONSUMPTION_COMB, CO2EMISSIONS)
+
+numeric_vars %>%
+  gather() %>%
+  ggplot(aes(value)) +
+  facet_wrap(~ key, scales = "free", ncol = 2) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
+  theme_minimal() +
+  labs(title = "Distribution of Key Numeric Variables")
+
+```
+
+
+CO2EMISSIONS: Most values are concentrated between 150 and 300 g/km, with a gradual decline toward higher emissions. This suggests a slightly skewed distribution toward the right.
+
+CYLINDERS: The distribution is clearly categorical, with strong peaks at 4, 6, and 8 cylinders—indicating these are the dominant engine types in the dataset.
+
+ENGINESIZE: Smaller engines (2 to 3.5 liters) are more common, while larger engines appear less frequently. The data is not perfectly symmetrical, showing some right skew.
+
+FUELCONSUMPTION_COMB: The majority of vehicles consume around 8 to 12 liters per 100 km. Fewer vehicles fall into the higher consumption range, again showing a right-skewed shape.
+
+```{r pressure, echo=FALSE}
+# Scatterplots with trend lines
+ggplot(data, aes(x = ENGINESIZE, y = CO2EMISSIONS)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", color = "red") +
+  theme_minimal() +
+  labs(title = "CO2 Emissions vs Engine Size", x = "Engine Size (L)", y = "CO2 Emissions (g/km)")
+```
+
+There is a clear positive relationship. As fuel consumption increases, CO2 emissions also increase. The points are close to the line, showing a strong connection.
+
+
+
+
+
+```{r pressure, echo=FALSE}
+ggplot(data, aes(x = FUELCONSUMPTION_COMB, y = CO2EMISSIONS)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", color = "darkgreen") +
+  theme_minimal() +
+  labs(title = "CO2 Emissions vs Combined Fuel Consumption")
+```
+
+This plot also shows a positive trend. Vehicles with bigger engines usually produce more CO2, but the points are more spread out, so the relationship is not as strong as with fuel consumption.
+
+
+
+
+```{r pressure, echo=FALSE}
+ggplot(data, aes(x = FUELTYPE, y = CO2EMISSIONS)) +
+  geom_boxplot() +
+  theme_minimal()
+```
+
+CO2 Emissions by Fuel Type:
+
+Vehicles using fuel type E tend to have the highest CO2 emissions based on the median.
+Fuel type D shows the lowest median emissions.
+All fuel types show some variation, but type E also has a wider range and more high outliers.
+
+install.packages("GGally")
+library(GGally)
+library(dplyr)
+```{r pressure, echo=FALSE}
+ggpairs(data %>% select(ENGINESIZE, CYLINDERS, FUELCONSUMPTION_COMB, CO2EMISSIONS))
+
+```
+
+
+library(corrplot)
+```{r pressure, echo=FALSE}
+# Only numeric columns
+cor_data <- data %>% select_if(is.numeric)
+cor_matrix <- cor(cor_data)
+
+# Plot
+corrplot(cor_matrix, method = "color", type = "upper", tl.cex = 0.8, title = "Correlation Matrix", mar=c(0,0,1,0))
+```
+
+
+
+Dark red = strong positive correlation (close to +1)
+Dark blue = strong negative correlation (close to -1)
+Lighter colors = weak or no correlation (close to 0)
+
+CO2EMISSIONS is strongly linked to:
+FUELCONSUMPTION_COMB
+FUELCONSUMPTION_CITY
+FUELCONSUMPTION_HWY
+ENGINESIZE and CYLINDERS
+
+FUELCONSUMPTION_COMB_MPG is negatively related to CO2 (more MPG = less emissions).
+
+MODELYEAR has no clear connection with the other variables.
+
+
+Simple Linear Regression
+
+# Fit the model
+model_simple <- lm(CO2EMISSIONS ~ FUELCONSUMPTION_COMB, data = data)
+
+# See the summary
+summary(model_simple)
+
+```{r pressure, echo=FALSE}
+ggplot(data, aes(x = FUELCONSUMPTION_COMB, y = CO2EMISSIONS)) +
+  geom_point(color = "black", alpha = 0.6) +
+  geom_smooth(method = "lm", color = "blue") +
+  labs(title = "Simple Linear Regression: CO2 vs Fuel Consumption",
+       x = "Combined Fuel Consumption (L/100km)",
+       y = "CO2 Emissions (g/km)") +
+  theme_minimal()
+```
+
+
+
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
