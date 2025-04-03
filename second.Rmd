@@ -179,6 +179,48 @@ sum(dataset$diff_weighted>0.1)
 #possible noise, we assume that all the calculations are done correctly.
 
 
+library(stringr)
+
+
+
+# Start with NA
+dataset$TransmissionGroup <- NA
+
+# Add all transmission groupings
+dataset$TransmissionGroup[grepl("^A[0-9]$", dataset$TRANSMISSION)] <- "Automatic"
+dataset$TransmissionGroup[grepl("^AM[0-9]$", dataset$TRANSMISSION)] <- "Automated Manual"
+dataset$TransmissionGroup[grepl("^AS[0-9]$", dataset$TRANSMISSION)] <- "Select Shift Auto"
+dataset$TransmissionGroup[grepl("^AV", dataset$TRANSMISSION)] <- "CVT"
+dataset$TransmissionGroup[grepl("^M[0-9]$", dataset$TRANSMISSION)] <- "Manual"  # NEW
+
+# Convert to factor
+dataset$TransmissionGroup <- factor(dataset$TransmissionGroup)
+
+# Check if any values still NA
+table(dataset$TransmissionGroup, useNA = "ifany")
+
+head(dataset)
+
+sum(is.na(dataset$TransmissionGroup))
+
+```{r pressure, echo=FALSE}
+ggplot(dataset %>% filter(!is.na(TransmissionGroup)), aes(x = TransmissionGroup, y = CO2EMISSIONS, fill = TransmissionGroup)) +
+  geom_boxplot() +
+  theme_minimal()
+
+```
+
+table(dataset$TransmissionGroup, useNA = "ifany")
+sum(is.na(dataset$TransmissionGroup))
+
+
+
+
+
+
+
+
+
 ```{r pressure, echo=FALSE}
 # Scatterplots with trend lines
 ggplot(data, aes(x = ENGINESIZE, y = CO2EMISSIONS)) +
@@ -299,3 +341,78 @@ The model with FUELCONSUMPTION_COMB explains slightly more of the variation (R²
 Residuals are smaller in the first model, which also suggests a better fit.
 Both models are statistically significant and show clear positive trends.
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+
+
+#Model Evaluation 
+
+model_multi <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB + TransmissionType, data = data)
+summary(model_multi)
+
+library(caret)
+
+set.seed(123)
+split <- createDataPartition(data$CO2EMISSIONS, p = 0.8, list = FALSE)
+train <- data[split, ]
+test <- data[-split, ]
+
+model_final <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB + TransmissionType, data = train)
+predictions <- predict(model_final, test)
+
+# RMSE
+rmse <- sqrt(mean((predictions - test$CO2EMISSIONS)^2))
+rmse
+
+#We evaluate the model by splitting the data into training and test sets (80/20). We then compare actual vs predicted values and inspect residuals.
+
+```{r pressure, echo=FALSE}
+# Plot: Actual vs Predicted
+ggplot(data.frame(Actual = test$CO2EMISSIONS, Predicted = predictions),
+       aes(x = Actual, y = Predicted)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, color = "blue") +
+  theme_minimal() +
+  labs(title = "Actual vs Predicted CO2 Emissions",
+       x = "Actual CO2",
+       y = "Predicted CO2")
+```
+
+
+
+
+```{r pressure, echo=FALSE}
+residuals <- test$CO2EMISSIONS - predictions
+
+ggplot(data.frame(Residuals = residuals), aes(x = Residuals)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
+  theme_minimal() +
+  labs(title = "Distribution of Residuals",
+       x = "Residuals (Actual - Predicted)",
+       y = "Count")
+
+
+```
+
+
+```{r pressure, echo=FALSE}
+ggplot(data.frame(Residuals = residuals), aes(x = "", y = Residuals)) +
+  geom_boxplot(fill = "lightblue") +
+  theme_minimal() +
+  labs(title = "Boxplot of Residuals",
+       x = "",
+       y = "Residuals (Actual - Predicted)")
+
+```
+
+
+
+
+
+Conclusion
+
+Which variables were most important?
+The most important variable in predicting CO2 emissions was FUELCONSUMPTION_COMB, which had the highest correlation and produced the strongest simple regression model. Other useful predictors included ENGINESIZE, CYLINDERS, and TransmissionType.
+
+Was the model good?
+Yes, the final multiple regression model performed well. It explained a large part of the variation in CO2 emissions (high R² value), and its predictions were close to the actual values in the test set. The residuals were centered around zero with a few expected outliers, showing the model was reasonably accurate.
