@@ -54,6 +54,13 @@ Also,there's a wide variety of fuel efficiency, from very eco-friendly models to
 ```{r}
 summary(data)
 ```
+Statistical summary of numerical variables.
+
+From the summary table we can observe that vehicles with larger engines and more cylinders tend to have higher fuel consumption and CO₂ emissions.
+
+Also,there's a wide variety of fuel efficiency, from very eco-friendly models to high-emission vehicles.
+
+From the model year column we can observe that all the cars are from 2014
 
  
 ```{r}
@@ -95,9 +102,8 @@ All categorical columns are free of spelling errors, case inconsistencies, or da
 ## Including Plots
 
 You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-# Histograms for numeric variables
+library(tidyr)
+```{r wide-histogram, fig.width=10, fig.height=6}
 numeric_vars <- data %>% select(ENGINESIZE, CYLINDERS, FUELCONSUMPTION_COMB, CO2EMISSIONS)
 
 numeric_vars %>%
@@ -107,17 +113,71 @@ numeric_vars %>%
   geom_histogram(bins = 30, fill = "steelblue", color = "white") +
   theme_minimal() +
   labs(title = "Distribution of Key Numeric Variables")
-
 ```
 
 
-CO2EMISSIONS: Most values are concentrated between 150 and 300 g/km, with a gradual decline toward higher emissions. This suggests a slightly skewed distribution toward the right.
+CO2EMISSIONS: Most values are concentrated between 150 and 300 g/km, with a gradual decline toward higher emissions. This suggests that have a slightly skewed distribution.
 
 CYLINDERS: The distribution is clearly categorical, with strong peaks at 4, 6, and 8 cylinders—indicating these are the dominant engine types in the dataset.
 
 ENGINESIZE: Smaller engines (2 to 3.5 liters) are more common, while larger engines appear less frequently. The data is not perfectly symmetrical, showing some right skew.
 
 FUELCONSUMPTION_COMB: The majority of vehicles consume around 8 to 12 liters per 100 km. Fewer vehicles fall into the higher consumption range, again showing a right-skewed shape.
+
+
+dataset$calculated_mpg <- 235.214583 / dataset$FUELCONSUMPTION_COMB
+# Compute the difference between reported and calculated MPG
+dataset$mpg_difference <- dataset$FUELCONSUMPTION_COMB_MPG - dataset$calculated_mpg
+# Set threshold as the 95th percentile
+percentile_95 <- quantile(dataset$mpg_difference, 0.95)
+print(percentile_95)
+# Count values exceeding the threshold
+sum(dataset$mpg_difference > percentile_95) #52
+#So there are 52 rows that we could delete since they do not satisfy the 
+#formula we use.
+
+#2. Check if the combutations are done correctly when calculating the
+#   FUELCONSUMPTION_COMB
+
+# Calculate the simple average
+dataset$simple_avg <- (dataset$FUELCONSUMPTION_CITY + dataset$FUELCONSUMPTION_HWY) / 2
+
+# Calculate the weighted average (55% city, 45% hwy)
+dataset$weighted_avg <- 0.55 * dataset$FUELCONSUMPTION_CITY + 0.45 * dataset$FUELCONSUMPTION_HWY
+
+# Compare to the actual COMB column
+dataset$diff_simple <- abs(dataset$FUELCONSUMPTION_COMB - dataset$simple_avg)
+dataset$diff_weighted <- abs(dataset$FUELCONSUMPTION_COMB - dataset$weighted_avg)
+
+# Average absolute differences
+mean(dataset$diff_simple)
+mean(dataset$diff_weighted)
+
+#We first perform some tests to see which formula is used for the calculation
+#of the average of fuel consumption in city and in highway.
+#The two possible averages is the simple average and the 55/45 weighted average.
+#By looking at the mean above, we can see that the formula with the lower 
+#mean difference is the one likely used to compute. 
+#So the formula used is:
+#        COMB = 0.55 x CITY + 0.45 x HWY
+
+#The next step is to set a threshold:
+#A proper threshold could be around 0.1 since the mean difference is close 
+#to 0.02510778
+#We can also check by using the IQR method
+Q1 <- quantile(dataset$diff_weighted, 0.25)
+Q3 <- quantile(dataset$diff_weighted, 0.75)
+IQR <- Q3 - Q1
+
+threshold <- Q3 + 1.5 * IQR  # Upper threshold
+print(threshold)
+
+sum(dataset$diff_weighted > threshold)
+#Does not give us anything. So we use the 0.1 threshold.
+sum(dataset$diff_weighted>0.1)
+#Since also with 0.1 threshold we can see that there are no points with 
+#possible noise, we assume that all the calculations are done correctly.
+
 
 ```{r pressure, echo=FALSE}
 # Scatterplots with trend lines
@@ -148,9 +208,12 @@ This plot also shows a positive trend. Vehicles with bigger engines usually prod
 
 
 ```{r pressure, echo=FALSE}
-ggplot(data, aes(x = FUELTYPE, y = CO2EMISSIONS)) +
+ggplot(data, aes(x = FUELTYPE, y = CO2EMISSIONS, fill = FUELTYPE)) +
   geom_boxplot() +
-  theme_minimal()
+  theme_minimal() +
+  labs(title = "CO2 Emissions by Fuel Type", x = "Fuel Type", y = "CO2 Emissions (g/km)") +
+  theme(legend.position = "none")  
+
 ```
 
 CO2 Emissions by Fuel Type:
@@ -180,8 +243,8 @@ corrplot(cor_matrix, method = "color", type = "upper", tl.cex = 0.8, title = "Co
 
 
 
-Dark red = strong positive correlation (close to +1)
-Dark blue = strong negative correlation (close to -1)
+Dark blue = strong positive correlation (close to +1)
+Dark red = strong negative correlation (close to -1)
 Lighter colors = weak or no correlation (close to 0)
 
 CO2EMISSIONS is strongly linked to:
@@ -213,8 +276,26 @@ ggplot(data, aes(x = FUELCONSUMPTION_COMB, y = CO2EMISSIONS)) +
   theme_minimal()
 ```
 
+# Simple linear regression: CO2 vs Engine Size
+model_engine <- lm(CO2EMISSIONS ~ ENGINESIZE, data = data)
+
+# Show the summary
+summary(model_engine)
+
+```{r pressure, echo=FALSE}
+ggplot(data, aes(x = ENGINESIZE, y = CO2EMISSIONS)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", color = "red") +
+  labs(title = "Simple Linear Regression: CO2 vs Engine Size",
+       x = "Engine Size (L)",
+       y = "CO2 Emissions (g/km)") +
+  theme_minimal()
+```
 
 
 
-
+Both variables are strong predictors of CO2 emissions.
+The model with FUELCONSUMPTION_COMB explains slightly more of the variation (R² = 0.796 vs 0.764).
+Residuals are smaller in the first model, which also suggests a better fit.
+Both models are statistically significant and show clear positive trends.
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
