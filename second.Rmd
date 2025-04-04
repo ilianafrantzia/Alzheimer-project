@@ -26,6 +26,7 @@ library(nortest)
 library(corrplot)
 library(caret)
 library(tidyr)
+
 ```
 Load the FuelConsumption dataset and preview the first 6 rows of the dataset.
 
@@ -115,6 +116,99 @@ numeric_vars %>%
   labs(title = "Distribution of Key Numeric Variables")
 ```
 
+```{r}
+data %>%
+  count(MAKE, sort = TRUE) %>%
+  top_n(10) %>%
+  ggplot(aes(x = reorder(MAKE, n), y = n)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Top 10 Car Makes", x = "Make", y = "Count")
+
+```
+
+```{r}
+
+data %>%
+  count(MODEL, sort = TRUE) %>%
+  top_n(10) %>%
+  ggplot(aes(x = reorder(MODEL, n), y = n)) +
+  geom_bar(stat = "identity", fill = "lightgreen") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Top 10 Car Models", x = "Model", y = "Count")
+```
+```{r}
+ggplot(data, aes(x = VEHICLECLASS, fill = VEHICLECLASS)) +
+  geom_bar() +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Distribution of Vehicle Classes", x = "Vehicle Class", y = "Count") +
+  theme(legend.position = "none")
+```
+
+
+
+
+### 📊 Categorical Variable Distributions
+
+```{r categorical-plots, warning=FALSE, message=FALSE, fig.width=10, fig.height=6}
+
+# 1. Top 10 Car Makes
+library(dplyr)
+library(ggplot2)
+
+data %>%
+  count(MAKE, sort = TRUE) %>%
+  top_n(10) %>%
+  ggplot(aes(x = reorder(MAKE, n), y = n)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Top 10 Car Makes", x = "Make", y = "Count")
+
+# 2. Top 10 Car Models
+data %>%
+  count(MODEL, sort = TRUE) %>%
+  top_n(10) %>%
+  ggplot(aes(x = reorder(MODEL, n), y = n)) +
+  geom_bar(stat = "identity", fill = "lightgreen") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Top 10 Car Models", x = "Model", y = "Count")
+
+# 3. Vehicle Class Distribution
+ggplot(data, aes(x = VEHICLECLASS, fill = VEHICLECLASS)) +
+  geom_bar() +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Distribution of Vehicle Classes", x = "Vehicle Class", y = "Count") +
+  theme(legend.position = "none")
+
+# 4. Fuel Type Distribution
+ggplot(data, aes(x = FUELTYPE, fill = FUELTYPE)) +
+  geom_bar() +
+  theme_minimal() +
+  labs(title = "Fuel Type Distribution", x = "Fuel Type", y = "Count") +
+  theme(legend.position = "none")
+
+# 5. Transmission Code Distribution
+ggplot(data, aes(x = TRANSMISSION, fill = TRANSMISSION)) +
+  geom_bar() +
+  theme_minimal() +
+  labs(title = "Transmission Code Distribution", x = "Transmission", y = "Count") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        legend.position = "none")
+```
+
+
+
+
+
+
+
+
 
 CO2EMISSIONS: Most values are concentrated between 150 and 300 g/km, with a gradual decline toward higher emissions. This suggests that have a slightly skewed distribution.
 
@@ -124,94 +218,87 @@ ENGINESIZE: Smaller engines (2 to 3.5 liters) are more common, while larger engi
 
 FUELCONSUMPTION_COMB: The majority of vehicles consume around 8 to 12 liters per 100 km. Fewer vehicles fall into the higher consumption range, again showing a right-skewed shape.
 
+```{r pressure, echo=FALSE}
+# 1. MPG Difference Check Without Creating a Column
+calculated_mpg <- 235.214583 / data$FUELCONSUMPTION_COMB
+mpg_diff <- data$FUELCONSUMPTION_COMB_MPG - calculated_mpg
 
-dataset$calculated_mpg <- 235.214583 / dataset$FUELCONSUMPTION_COMB
-# Compute the difference between reported and calculated MPG
-dataset$mpg_difference <- dataset$FUELCONSUMPTION_COMB_MPG - dataset$calculated_mpg
-# Set threshold as the 95th percentile
-percentile_95 <- quantile(dataset$mpg_difference, 0.95)
+# Threshold for the top 5% largest differences
+percentile_95 <- quantile(mpg_diff, 0.95)
 print(percentile_95)
-# Count values exceeding the threshold
-sum(dataset$mpg_difference > percentile_95) #52
-#So there are 52 rows that we could delete since they do not satisfy the 
-#formula we use.
 
-#2. Check if the combutations are done correctly when calculating the
-#   FUELCONSUMPTION_COMB
+# Count how many exceed it
+sum(mpg_diff > percentile_95)  # Still gives 52
 
-# Calculate the simple average
-dataset$simple_avg <- (dataset$FUELCONSUMPTION_CITY + dataset$FUELCONSUMPTION_HWY) / 2
 
-# Calculate the weighted average (55% city, 45% hwy)
-dataset$weighted_avg <- 0.55 * dataset$FUELCONSUMPTION_CITY + 0.45 * dataset$FUELCONSUMPTION_HWY
+# 2. Fuel Consumption Check (Simple and Weighted Average)
 
-# Compare to the actual COMB column
-dataset$diff_simple <- abs(dataset$FUELCONSUMPTION_COMB - dataset$simple_avg)
-dataset$diff_weighted <- abs(dataset$FUELCONSUMPTION_COMB - dataset$weighted_avg)
+# Simple average
+simple_avg <- (data$FUELCONSUMPTION_CITY + data$FUELCONSUMPTION_HWY) / 2
+# Weighted average
+weighted_avg <- 0.55 * data$FUELCONSUMPTION_CITY + 0.45 * data$FUELCONSUMPTION_HWY
 
-# Average absolute differences
-mean(dataset$diff_simple)
-mean(dataset$diff_weighted)
+# Compare to actual
+diff_simple <- abs(data$FUELCONSUMPTION_COMB - simple_avg)
+diff_weighted <- abs(data$FUELCONSUMPTION_COMB - weighted_avg)
 
-#We first perform some tests to see which formula is used for the calculation
-#of the average of fuel consumption in city and in highway.
-#The two possible averages is the simple average and the 55/45 weighted average.
-#By looking at the mean above, we can see that the formula with the lower 
-#mean difference is the one likely used to compute. 
-#So the formula used is:
-#        COMB = 0.55 x CITY + 0.45 x HWY
+# Mean differences
+mean(diff_simple)
+mean(diff_weighted)
 
-#The next step is to set a threshold:
-#A proper threshold could be around 0.1 since the mean difference is close 
-#to 0.02510778
-#We can also check by using the IQR method
-Q1 <- quantile(dataset$diff_weighted, 0.25)
-Q3 <- quantile(dataset$diff_weighted, 0.75)
+# Use IQR method for threshold
+Q1 <- quantile(diff_weighted, 0.25)
+Q3 <- quantile(diff_weighted, 0.75)
 IQR <- Q3 - Q1
-
-threshold <- Q3 + 1.5 * IQR  # Upper threshold
+threshold <- Q3 + 1.5 * IQR
 print(threshold)
 
-sum(dataset$diff_weighted > threshold)
-#Does not give us anything. So we use the 0.1 threshold.
-sum(dataset$diff_weighted>0.1)
-#Since also with 0.1 threshold we can see that there are no points with 
-#possible noise, we assume that all the calculations are done correctly.
+# Check how many values are above threshold
+sum(diff_weighted > threshold)
+
+# Or use 0.1 as your cutoff
+sum(diff_weighted > 0.1)
+```
 
 
+
+```{r}
 library(stringr)
 
 
 
 # Start with NA
-dataset$TransmissionGroup <- NA
+data$TransmissionGroup <- NA
 
 # Add all transmission groupings
-dataset$TransmissionGroup[grepl("^A[0-9]$", dataset$TRANSMISSION)] <- "Automatic"
-dataset$TransmissionGroup[grepl("^AM[0-9]$", dataset$TRANSMISSION)] <- "Automated Manual"
-dataset$TransmissionGroup[grepl("^AS[0-9]$", dataset$TRANSMISSION)] <- "Select Shift Auto"
-dataset$TransmissionGroup[grepl("^AV", dataset$TRANSMISSION)] <- "CVT"
-dataset$TransmissionGroup[grepl("^M[0-9]$", dataset$TRANSMISSION)] <- "Manual"  # NEW
+data$TransmissionGroup[grepl("^A[0-9]$", data$TRANSMISSION)] <- "Automatic"
+data$TransmissionGroup[grepl("^AM[0-9]$", data$TRANSMISSION)] <- "Automated Manual"
+data$TransmissionGroup[grepl("^AS[0-9]$", data$TRANSMISSION)] <- "Select Shift Auto"
+data$TransmissionGroup[grepl("^AV", data$TRANSMISSION)] <- "CVT"
+data$TransmissionGroup[grepl("^M[0-9]$", data$TRANSMISSION)] <- "Manual"  # NEW
 
 # Convert to factor
-dataset$TransmissionGroup <- factor(dataset$TransmissionGroup)
+data$TransmissionGroup <- factor(dataset$TransmissionGroup)
 
 # Check if any values still NA
-table(dataset$TransmissionGroup, useNA = "ifany")
+table(data$TransmissionGroup, useNA = "ifany")
 
-head(dataset)
+head(data)
 
-sum(is.na(dataset$TransmissionGroup))
+sum(is.na(data$TransmissionGroup))
+```
 
 ```{r pressure, echo=FALSE}
-ggplot(dataset %>% filter(!is.na(TransmissionGroup)), aes(x = TransmissionGroup, y = CO2EMISSIONS, fill = TransmissionGroup)) +
+ggplot(data %>% filter(!is.na(TransmissionGroup)), aes(x = TransmissionGroup, y = CO2EMISSIONS, fill = TransmissionGroup)) +
   geom_boxplot() +
   theme_minimal()
 
 ```
 
-table(dataset$TransmissionGroup, useNA = "ifany")
-sum(is.na(dataset$TransmissionGroup))
+```{r}
+table(data$TransmissionGroup, useNA = "ifany")
+sum(is.na(data$TransmissionGroup))
+```
 
 
 
@@ -220,8 +307,7 @@ sum(is.na(dataset$TransmissionGroup))
 
 
 
-
-```{r pressure, echo=FALSE}
+```{r scatter-enginesize}
 # Scatterplots with trend lines
 ggplot(data, aes(x = ENGINESIZE, y = CO2EMISSIONS)) +
   geom_point(alpha = 0.6) +
@@ -264,17 +350,20 @@ Vehicles using fuel type E tend to have the highest CO2 emissions based on the m
 Fuel type D shows the lowest median emissions.
 All fuel types show some variation, but type E also has a wider range and more high outliers.
 
+```{r pressure, echo=FALSE}
 install.packages("GGally")
 library(GGally)
 library(dplyr)
-```{r pressure, echo=FALSE}
+
 ggpairs(data %>% select(ENGINESIZE, CYLINDERS, FUELCONSUMPTION_COMB, CO2EMISSIONS))
 
 ```
 
 
-library(corrplot)
+
 ```{r pressure, echo=FALSE}
+library(corrplot)
+library(dplyr)
 # Only numeric columns
 cor_data <- data %>% select_if(is.numeric)
 cor_matrix <- cor(cor_data)
@@ -302,13 +391,16 @@ MODELYEAR has no clear connection with the other variables.
 
 Simple Linear Regression
 
+```{r pressure, echo=FALSE}
 # Fit the model
 model_simple <- lm(CO2EMISSIONS ~ FUELCONSUMPTION_COMB, data = data)
 
 # See the summary
 summary(model_simple)
+```
 
 ```{r pressure, echo=FALSE}
+library(ggplot2)
 ggplot(data, aes(x = FUELCONSUMPTION_COMB, y = CO2EMISSIONS)) +
   geom_point(color = "black", alpha = 0.6) +
   geom_smooth(method = "lm", color = "blue") +
@@ -317,12 +409,13 @@ ggplot(data, aes(x = FUELCONSUMPTION_COMB, y = CO2EMISSIONS)) +
        y = "CO2 Emissions (g/km)") +
   theme_minimal()
 ```
-
+```{r pressure, echo=FALSE}
 # Simple linear regression: CO2 vs Engine Size
 model_engine <- lm(CO2EMISSIONS ~ ENGINESIZE, data = data)
 
 # Show the summary
 summary(model_engine)
+```
 
 ```{r pressure, echo=FALSE}
 ggplot(data, aes(x = ENGINESIZE, y = CO2EMISSIONS)) +
@@ -346,8 +439,9 @@ Note that the `echo = FALSE` parameter was added to the code chunk to prevent pr
 
 
 #Model Evaluation 
-
-model_multi <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB + TransmissionType, data = data)
+```{r pressure, echo=FALSE}
+library(ggplot2)
+model_multi <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB , data = data)
 summary(model_multi)
 
 library(caret)
@@ -357,7 +451,7 @@ split <- createDataPartition(data$CO2EMISSIONS, p = 0.8, list = FALSE)
 train <- data[split, ]
 test <- data[-split, ]
 
-model_final <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB + TransmissionType, data = train)
+model_final <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB , data = train)
 predictions <- predict(model_final, test)
 
 # RMSE
@@ -365,6 +459,7 @@ rmse <- sqrt(mean((predictions - test$CO2EMISSIONS)^2))
 rmse
 
 #We evaluate the model by splitting the data into training and test sets (80/20). We then compare actual vs predicted values and inspect residuals.
+``` 
 
 ```{r pressure, echo=FALSE}
 # Plot: Actual vs Predicted
