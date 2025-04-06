@@ -1,14 +1,25 @@
 ---
 title: "DSC 532- Fuel Regression project"
-output: pdf_document
+names: Eleni Yiasoumi , Marios Christodoulou , Iliana Frantzia
+output:
+  html_document:
+    df_print: paged
 date: "2025-04-01"
 ---
 
-Dataset Overview
-Observations: 1,067 rows (vehicles)
-Variables: 13 columns
-Purpose: Contains fuel consumption and CO2 emissions data for vehicles from the year 2014
+### Dataset Overview
 
+The FuelConsumption.csv dataset contains information on 1,067 observations (vehicles from the model year 2014 only) and 13 columns (variables). Each row represents a different vehicle model and the variables describe both the technical specifications and environmental performance of the vehicles.
+
+The main variables include:
+
+ENGINE_SIZE – engine size in liters
+CYLINDERS – number of engine cylinders
+FUELCONSUMPTION_COMB – combined fuel consumption in L/100 km
+CO2EMISSIONS – carbon dioxide emissions in grams/km
+FUELTYPE and TRANSMISSION – fuel type and transmission category
+
+The main purpose of this project is to analyze how different vehicle features affect fuel consumption and CO₂ emissions. 
 
 
 
@@ -26,187 +37,179 @@ library(nortest)
 library(corrplot)
 library(caret)
 library(tidyr)
+library(GGally)
 
 ```
+
 Load the FuelConsumption dataset and preview the first 6 rows of the dataset.
 
 ```{r load-data, message=FALSE}
-data <- read.csv("FuelConsumption.csv")
-head(data)
+regression <- read.csv("FuelConsumption.csv")
+head(regression)
 ```
 
 The dataset includes features like:
 
-```{r}
-colnames(data)
+```{r columns}
+colnames(regression)
 ``` 
-Data types and Structure of the dataset.
-```{r}
+Data types and Structure of the dataset :
+
+```{r structure}
 str(data)
 ```
 
 
-Statistical summary of numerical variables.
+Statistical summary of numerical variables :
 
-From the summary table we can observe that vehicles with larger engines and more cylinders tend to have higher fuel consumption and CO₂ emissions.
 
-Also,there's a wide variety of fuel efficiency, from very eco-friendly models to high-emission vehicles.
-
-```{r}
-summary(data)
+```{r summary}
+summary(regression)
 ```
-Statistical summary of numerical variables.
+
+- ENGINE_SIZE: Ranges from 1.0 to 8.4 liters and the mean engine size is 3.35 L, suggesting that most      cars   have moderate engine sizes
+- CYLINDERS: Ranges from 3 to 12 cylinders, with a median of 6 cylinders and the average number of         cylinders is around 5.8
+- FUELCONSUMPTION_CITY / HWY / COMB: Combined fuel consumption (L/100 km) ranges from 4.7 to 25.8 and the   mean combined fuel consumption is 11.58, indicating a mix of fuel-efficient and less efficient vehicles
+- FUELCONSUMPTION_COMB_MPG: Ranges from 11 to 60 miles per gallon with median 26 MPG, meaning half the     cars get more than 26 MPG and half get less
+- CO2EMISSIONS: Ranges from 108 to 488 grams/km, with a mean of 256.2 ,suggesting a wide spread in         vehicle emissions, influenced by engine and fuel consumption differences
+
+
 
 From the summary table we can observe that vehicles with larger engines and more cylinders tend to have higher fuel consumption and CO₂ emissions.
 
 Also,there's a wide variety of fuel efficiency, from very eco-friendly models to high-emission vehicles.
 
-From the model year column we can observe that all the cars are from 2014
 
- 
-```{r}
+Count the number missing values per column
 
-colSums(is.na(data))  # This gives you count of NAs per column
+```{r colsum}
+
+colSums(is.na(regression))  
 
 ```
 
 We have 0 missing values, so we don’t need to impute or remove anything.
 
-```{r}
 
-# Number of duplicated rows
-sum(duplicated(data))
+Number of duplicated rows:
 
-```
+```{r duplicate}
 
-There are no duplicated rows in the dataset
-
-```{r}
-
-# Check unique values for categorical columns
-cat_cols <- names(data)[sapply(data, is.character)]
-
-# Apply unique() to each categorical column and name the output
-unique_values <- lapply(data[cat_cols], unique)
-
-# Display the unique values nicely
-unique_values
-
+sum(duplicated(regression))
 
 ```
 
-The dataset contains a rich variety of categorical features, including 39 car makes, hundreds of models, 16 vehicle classes, multiple transmission types, and 4 fuel types.
+There are no duplicated rows in the dataset.
+
+Check unique values for categorical columns
+```{r unique}
+
+cat_cols <- names(regression)[sapply(regression, is.character)]
+
+unique_values <- lapply(regression[cat_cols], unique)
+
+```
+
+The dataset contains a rich variety of categorical features, including 39 car makes, hundreds of models, 16 vehicle classes, multiple transmission types and 4 fuel types.
 
 All categorical columns are free of spelling errors, case inconsistencies, or data entry mistakes.
 
 
-## Including Plots
+## Numerical columns plots
 
-You can also embed plots, for example:
-library(tidyr)
-```{r wide-histogram, fig.width=10, fig.height=6}
-numeric_vars <- data %>% select(ENGINESIZE, CYLINDERS, FUELCONSUMPTION_COMB, CO2EMISSIONS)
 
-numeric_vars %>%
-  gather() %>%
-  ggplot(aes(value)) +
-  facet_wrap(~ key, scales = "free", ncol = 2) +
-  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
-  theme_minimal() +
-  labs(title = "Distribution of Key Numeric Variables")
+Histogram of Engine Size distribution
+
+```{r hist-enginesize}
+ggplot(regression, aes(x = ENGINESIZE)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "black") +
+  labs(title = "Distribution of Engine Size", x = "Engine Size", y = "Count")
 ```
 
-```{r}
-data %>%
-  count(MAKE, sort = TRUE) %>%
-  top_n(10) %>%
-  ggplot(aes(x = reorder(MAKE, n), y = n)) +
-  geom_bar(stat = "identity", fill = "skyblue") +
-  coord_flip() +
-  theme_minimal() +
-  labs(title = "Top 10 Car Makes", x = "Make", y = "Count")
+Most vehicles have engine sizes between 2.0 and 4.0 liters, with notable peaks around 2.0L and 3.5L. The distribution is right-skewed, meaning that while smaller engines are very common, a smaller number of vehicles have larger engines (above 5.0L). This suggests that most vehicles in the dataset are built with fuel efficiency in mind, while larger engines are limited to performance.
+
+
+
+Histogram of Cylinders distribution
+
+```{r hist-cylinders}
+ggplot(regression, aes(x = CYLINDERS)) +
+  geom_histogram(bins = 15, fill = "steelblue", color = "black") +
+  labs(title = "Distribution of Cylinders", x = "Cylinders", y = "Count")
+```
+
+The histogram shows the distribution of the number of cylinders across vehicles in the dataset. The majority of cars have 4, 6 or 8 cylinders, with 4-cylinder engines being the most common, followed by 6 and 8 cylinders. This aligns with typical engine configurations found in compact, mid-sized, and larger vehicles.Higher cylinder counts like 10 and 12 cylinders are rare, suggesting they are used in high-performance or luxury vehicles. Overall, the plot highlights that most vehicles are built for everyday efficiency, with fewer models designed for high power output.
+
+
+
+Histogram of Fuel Consumption City distribution
+ 
+```{r hist-fuel-city}
+ggplot(regression, aes(x = FUELCONSUMPTION_CITY)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "black") +
+  labs(title = "Fuel Consumption (City)", x = "Fuel Consumption City", y = "Count")
+```
+
+The histogram shows the distribution of fuel consumption in city driving conditions, measured in liters per 100 kilometers (L/100 km). Most vehicles consume between 8 and 15 L/100 km, with a clear peak around 11–13 L/100 km, suggesting that this is the typical range for city fuel efficiency in 2014 vehicles.
+The distribution is right-skewed, showing that while most cars are moderately fuel-efficient in the city, there are several vehicles with much higher consumption, reaching up to 30 L/100 km. These higher values likely correspond to larger, heavier or performance vehicles.
+
+
+
+Histogram of Fuel Consumption Highway distribution
+
+```{r fuel-hwy}
+ggplot(regression, aes(x = FUELCONSUMPTION_HWY)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "black") +
+  labs(title = "Fuel Consumption (Highway)", x = "Fuel Consumption Hwy", y = "Count")
+```
+
+This histogram displays the distribution of fuel consumption during highway driving, measured in liters per 100 kilometers (L/100 km). Most vehicles consume between 7 and 11 L/100 km, with a clear peak around 8 to 9 L/100 km, suggesting that highway driving is generally more fuel-efficient compared to city driving.Similar to the city fuel consumption plot, the distribution is right-skewed, with a smaller number of vehicles showing much higher highway fuel use, exceeding 15 L/100 km. These outliers likely correspond to larger or high-performance vehicles that are less optimized for long-distance efficiency.
+
+
+
+Histogram of Fuel Consumption Combined distribution
+
+```{r hist-fuel-comb}
+ggplot(regression, aes(x = FUELCONSUMPTION_COMB)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "black") +
+  labs(title = "Fuel Consumption (Combined)", x = "Fuel Consumption Comb", y = "Count")
+```
+
+This histogram shows the distribution of combined fuel consumption, which averages city and highway fuel use, measured in liters per 100 kilometers (L/100 km). The majority of vehicles fall between 8 and 14 L/100 km, with a peak around 10 to 11 L/100 km, indicating that most cars in the dataset are moderately fuel-efficient under average driving conditions.As from  previous, the distribution is right-skewed, meaning a small number of vehicles consume significantly more fuel,up to over 25 L/100 km. These high-consumption outliers likely represent large SUVs, trucks or performance vehicles.
+
+
+
+Histogram of Fuel Consumption MPG distribution
+
+```{r hist-fuel-mpg}
+ggplot(regression, aes(x = FUELCONSUMPTION_COMB_MPG)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "black") +
+  labs(title = "Fuel Consumption (MPG)", x = "Fuel Consumption Comb MPG", y = "Count")
+```
+
+This histogram displays the combined fuel consumption in miles per gallon (MPG), which is a commonly used measure of vehicle fuel efficiency. Higher MPG values indicate better fuel economy. Most vehicles in the dataset fall between 15 and 35 MPG, with a peak around 25 to 30 MPG.The distribution is left-skewed, since a higher MPG is better and fewer vehicles reach the high-efficiency range above 40 MPG. 
+
+
+Histogram of CO2 Emissions distribution
+ 
+```{r hist-co2}
+ggplot(regression, aes(x = CO2EMISSIONS)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "black") +
+  labs(title = "Distribution of CO2 Emissions", x = "CO2 Emissions", y = "Count")
+```
+
+The histogram illustrates the distribution of CO₂ emissions (in grams per kilometer) for cars. Most cars emit between 180 and 300 g/km, with the highest concentration around 200–250 g/km, which likely represents average passenger vehicles.
+
+The distribution shows a slight right skew, indicating that while most vehicles have moderate emissions, there are several high-emission outliers exceeding 400 g/km. These are likely large-engine, high-consumption models such as SUVs or performance vehicles.
+
+To comfirm the skewness futher
+
+```{r skew-co2}
+skewness(regression$CO2EMISSIONS)
 
 ```
 
-```{r}
-
-data %>%
-  count(MODEL, sort = TRUE) %>%
-  top_n(10) %>%
-  ggplot(aes(x = reorder(MODEL, n), y = n)) +
-  geom_bar(stat = "identity", fill = "lightgreen") +
-  coord_flip() +
-  theme_minimal() +
-  labs(title = "Top 10 Car Models", x = "Model", y = "Count")
-```
-```{r}
-ggplot(data, aes(x = VEHICLECLASS, fill = VEHICLECLASS)) +
-  geom_bar() +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Distribution of Vehicle Classes", x = "Vehicle Class", y = "Count") +
-  theme(legend.position = "none")
-```
-
-
-
-
-### 📊 Categorical Variable Distributions
-
-```{r categorical-plots, warning=FALSE, message=FALSE, fig.width=10, fig.height=6}
-
-# 1. Top 10 Car Makes
-library(dplyr)
-library(ggplot2)
-
-data %>%
-  count(MAKE, sort = TRUE) %>%
-  top_n(10) %>%
-  ggplot(aes(x = reorder(MAKE, n), y = n)) +
-  geom_bar(stat = "identity", fill = "skyblue") +
-  coord_flip() +
-  theme_minimal() +
-  labs(title = "Top 10 Car Makes", x = "Make", y = "Count")
-
-# 2. Top 10 Car Models
-data %>%
-  count(MODEL, sort = TRUE) %>%
-  top_n(10) %>%
-  ggplot(aes(x = reorder(MODEL, n), y = n)) +
-  geom_bar(stat = "identity", fill = "lightgreen") +
-  coord_flip() +
-  theme_minimal() +
-  labs(title = "Top 10 Car Models", x = "Model", y = "Count")
-
-# 3. Vehicle Class Distribution
-ggplot(data, aes(x = VEHICLECLASS, fill = VEHICLECLASS)) +
-  geom_bar() +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Distribution of Vehicle Classes", x = "Vehicle Class", y = "Count") +
-  theme(legend.position = "none")
-
-# 4. Fuel Type Distribution
-ggplot(data, aes(x = FUELTYPE, fill = FUELTYPE)) +
-  geom_bar() +
-  theme_minimal() +
-  labs(title = "Fuel Type Distribution", x = "Fuel Type", y = "Count") +
-  theme(legend.position = "none")
-
-# 5. Transmission Code Distribution
-ggplot(data, aes(x = TRANSMISSION, fill = TRANSMISSION)) +
-  geom_bar() +
-  theme_minimal() +
-  labs(title = "Transmission Code Distribution", x = "Transmission", y = "Count") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1),
-        legend.position = "none")
-```
-
-
-
-
-
-
+As we can observe the skewness is >0.5 comfirming that the distribution is slightly right skewed.
 
 
 
@@ -218,10 +221,95 @@ ENGINESIZE: Smaller engines (2 to 3.5 liters) are more common, while larger engi
 
 FUELCONSUMPTION_COMB: The majority of vehicles consume around 8 to 12 liters per 100 km. Fewer vehicles fall into the higher consumption range, again showing a right-skewed shape.
 
-```{r pressure, echo=FALSE}
+
+
+## Categorical columns plots 
+
+Barplot of make distribution:
+
+```{r bar-make}
+regression %>%
+  count(MAKE, sort = TRUE) %>%
+  ggplot(aes(x = reorder(MAKE, n), y = n)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Car Makes", x = "Make", y = "Count")
+```
+
+From the plot, we observe that the most common car makes in the dataset are Ford, Chevrolet, BMW, Mercedes-Benz and Toyota.On the other end, premium and niche brands like Rolls-Royce, Aston Martin and Lamborghini appear far less frequently, likely due to their lower production volumes.
+
+
+
+Barplot of model disribution:
+
+```{r bar-model}
+regression %>%
+  count(MODEL, sort = TRUE) %>%
+  top_n(10) %>%
+  ggplot(aes(x = reorder(MODEL, n), y = n)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Top 10 Car Models", x = "Model", y = "Count")
+```
+
+The bar chart above displays the top 10 most frequently occurring car models in the dataset. The most common models are:F150 FFV 4X4,F150 FFV,FOCUS FFV,BEETLE,ACCORD.These models appear between 5 and 8 times each in the dataset.Notably, Ford has multiple variants of the F150 among the most frequent models, reflecting its strong market presence and product variety in 2014.
+
+
+Barplot of class distribution: 
+
+```{r bar-class}
+
+
+ggplot(regression, aes(x = fct_rev(fct_infreq(VEHICLECLASS)), fill = VEHICLECLASS)) +
+  geom_bar(fill = "skyblue") +
+  theme_minimal() +
+  coord_flip() +
+  labs(title = "Distribution of Vehicle Classes", x = "Vehicle Class", y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+
+```
+
+
+
+The bar chart above presents the distribution of vehicle classes within the dataset. The most common classes are mid-size, compact, small SUVs and standard SUVs, followed by full-size vehicles. Smaller segments of the dataset include two-seaters, subcompacts and pickup trucks, as well as a variety of less common vehicle types such as minivans,vans, station wagons and special purpose vehicles.
+
+
+Barplot of fuel type distribution:
+
+```{r bar-fueltype}
+
+ggplot(regression, aes(x = FUELTYPE, fill = FUELTYPE)) +
+  geom_bar(fill="skyblue") +
+  theme_minimal() +
+  labs(title = "Fuel Type Distribution", x = "Fuel Type", y = "Count") +
+  theme(legend.position = "none")
+```
+
+The fuel type distribution chart reveals that the majority of vehicles in the dataset run on regular gasoline (X), followed closely by those using premium gasoline (Z). In contrast, vehicles that use ethanol (E85) and diesel (D) are significantly less common. This suggests that the dataset is heavily weighted toward traditional gasoline-powered vehicles, which reflects market trends in 2014.It is important to consider this imbalance when analyzing fuel consumption and CO₂ emissions, as different fuel types have distinct environmental and performance characteristics.
+
+
+```{r bar-transmission}
+ggplot(regression, aes(x = fct_rev(fct_infreq(TRANSMISSION)), fill = VEHICLECLASS)) +
+  geom_bar(fill = "skyblue") +
+  theme_minimal() +
+  coord_flip() +
+  labs(title = "Distribution of Transmission Code", x = "Transmission Code", y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+```
+
+The bar chart shows the distribution of transmission types in the dataset, represented by coded labels. The most common transmission types are A6 (6-speed automatic), AS6 (6-speed automatic with manual mode), and M6 (6-speed manual), indicating that 6-speed systems dominate among the recorded vehicles. Other frequently appearing codes include A8 and AS8, which reflect more modern 8-speed automatics.However, it is clear that automatic transmissions are more prevalent.This variation in transmission types may affect fuel efficiency and CO₂ emissions, as different transmission technologies can influence engine performance and vehicle efficiency. 
+
+```{r mpg diff}
+
 # 1. MPG Difference Check Without Creating a Column
-calculated_mpg <- 235.214583 / data$FUELCONSUMPTION_COMB
-mpg_diff <- data$FUELCONSUMPTION_COMB_MPG - calculated_mpg
+calculated_mpg <- 235.214583 / regression$FUELCONSUMPTION_COMB
+mpg_diff <- regression$FUELCONSUMPTION_COMB_MPG - calculated_mpg
 
 # Threshold for the top 5% largest differences
 percentile_95 <- quantile(mpg_diff, 0.95)
@@ -234,18 +322,29 @@ sum(mpg_diff > percentile_95)  # Still gives 52
 # 2. Fuel Consumption Check (Simple and Weighted Average)
 
 # Simple average
-simple_avg <- (data$FUELCONSUMPTION_CITY + data$FUELCONSUMPTION_HWY) / 2
+simple_avg <- (regression$FUELCONSUMPTION_CITY + regression$FUELCONSUMPTION_HWY) / 2
 # Weighted average
-weighted_avg <- 0.55 * data$FUELCONSUMPTION_CITY + 0.45 * data$FUELCONSUMPTION_HWY
+weighted_avg <- 0.55 * regression$FUELCONSUMPTION_CITY + 0.45 * regression$FUELCONSUMPTION_HWY
 
 # Compare to actual
-diff_simple <- abs(data$FUELCONSUMPTION_COMB - simple_avg)
-diff_weighted <- abs(data$FUELCONSUMPTION_COMB - weighted_avg)
+diff_simple <- abs(regression$FUELCONSUMPTION_COMB - simple_avg)
+diff_weighted <- abs(regression$FUELCONSUMPTION_COMB - weighted_avg)
 
 # Mean differences
 mean(diff_simple)
 mean(diff_weighted)
 
+```
+
+We first perform some tests to see which formula is used for the calculation of the average of fuel consumption in city and in highway.The two possible averages is the simple average and the 55/45 weighted average.By looking at the mean above, we can see that the formula with the lower mean difference is the one likely used to compute. 
+So the formula used is:
+     COMB = 0.55 x CITY + 0.45 x HWY
+
+The next step is to set a threshold:
+A proper threshold could be around 0.1 since the mean difference is close to 0.02510778
+
+We can also check by using the IQR method:
+```{r IQR method for threshold}
 # Use IQR method for threshold
 Q1 <- quantile(diff_weighted, 0.25)
 Q3 <- quantile(diff_weighted, 0.75)
@@ -260,56 +359,56 @@ sum(diff_weighted > threshold)
 sum(diff_weighted > 0.1)
 ```
 
+Since also with 0.1 threshold we can see that there are no points with possible noise, we assume that all the calculations are done correctly.
 
 
-```{r}
-library(stringr)
-
-
-
-# Start with NA
-data$TransmissionGroup <- NA
-
-# Add all transmission groupings
-data$TransmissionGroup[grepl("^A[0-9]$", data$TRANSMISSION)] <- "Automatic"
-data$TransmissionGroup[grepl("^AM[0-9]$", data$TRANSMISSION)] <- "Automated Manual"
-data$TransmissionGroup[grepl("^AS[0-9]$", data$TRANSMISSION)] <- "Select Shift Auto"
-data$TransmissionGroup[grepl("^AV", data$TRANSMISSION)] <- "CVT"
-data$TransmissionGroup[grepl("^M[0-9]$", data$TRANSMISSION)] <- "Manual"  # NEW
-
-# Convert to factor
-data$TransmissionGroup <- factor(dataset$TransmissionGroup)
-
-# Check if any values still NA
-table(data$TransmissionGroup, useNA = "ifany")
-
-head(data)
-
-sum(is.na(data$TransmissionGroup))
+```{r NA}
+regression$TransmissionGroup <- NA
 ```
 
-```{r pressure, echo=FALSE}
-ggplot(data %>% filter(!is.na(TransmissionGroup)), aes(x = TransmissionGroup, y = CO2EMISSIONS, fill = TransmissionGroup)) +
+Add all transmission groupings
+
+```{r convert-factor}
+regression$TransmissionGroup[grepl("^A[0-9]$", regression$TRANSMISSION)] <- "Automatic"
+regression$TransmissionGroup[grepl("^AM[0-9]$", regression$TRANSMISSION)] <- "Automated Manual"
+regression$TransmissionGroup[grepl("^AS[0-9]$", regression$TRANSMISSION)] <- "Select Shift Auto"
+regression$TransmissionGroup[grepl("^AV", regression$TRANSMISSION)] <- "CVT"
+regression$TransmissionGroup[grepl("^M[0-9]$", regression$TRANSMISSION)] <- "Manual"  # NEW
+
+# Convert to factor
+regression$TransmissionGroup <- factor(regression$TransmissionGroup)
+
+# Check if any values still NA
+table(regression$TransmissionGroup, useNA = "ifany")
+
+head(regression)
+
+sum(is.na(regression$TransmissionGroup))
+```
+
+### Plots compared with CO2EMISSIONS
+
+```{r trans-ggplot}
+ggplot(regression %>% filter(!is.na(TransmissionGroup)), aes(x = TransmissionGroup, y = CO2EMISSIONS, fill = TransmissionGroup)) +
   geom_boxplot() +
   theme_minimal()
 
 ```
 
-```{r}
-table(data$TransmissionGroup, useNA = "ifany")
-sum(is.na(data$TransmissionGroup))
+```{r table-trans}
+table(regression$TransmissionGroup, useNA = "ifany")
+sum(is.na(regression$TransmissionGroup))
 ```
+The boxplot illustrates the distribution of CO₂ emissions across different transmission types, grouped into five categories: Automated Manual, Automatic, CVT (Continuously Variable Transmission), Manual, and Select Shift Automatic. From the visualization, we observe that automatic transmissions have the highest variability in emissions and among the highest median values, indicating that these vehicles tend to emit more CO₂ on average. Similarly, select shift automatics and automated manuals also show relatively high median emissions and wider interquartile ranges, suggesting that they are often found in higher-emission vehicles.
+
+In contrast, CVT-equipped vehicles have the lowest median CO₂ emissions, with a compact distribution and fewer high-emission outliers. This reflects the fuel-efficient nature of CVT technology, commonly used in smaller or economy-focused vehicles. Manual transmissions also show a lower median compared to automatics, though with a broader spread of values.
+
+Overall, the plot highlights that transmission type is a relevant factor influencing CO₂ emissions. Vehicles with CVTs and manual transmissions tend to be more environmentally friendly in terms of emissions, while automatics and select shift systems are generally associated with higher emissions, likely due to being paired with more powerful engines or heavier vehicle classes.
 
 
-
-
-
-
-
-
-```{r scatter-enginesize}
+```{r scatter-engine}
 # Scatterplots with trend lines
-ggplot(data, aes(x = ENGINESIZE, y = CO2EMISSIONS)) +
+ggplot(regression, aes(x = ENGINESIZE, y = CO2EMISSIONS)) +
   geom_point(alpha = 0.6) +
   geom_smooth(method = "lm", color = "red") +
   theme_minimal() +
@@ -320,10 +419,8 @@ There is a clear positive relationship. As fuel consumption increases, CO2 emiss
 
 
 
-
-
-```{r pressure, echo=FALSE}
-ggplot(data, aes(x = FUELCONSUMPTION_COMB, y = CO2EMISSIONS)) +
+```{r ggplot-comb}
+ggplot(regression, aes(x = FUELCONSUMPTION_COMB, y = CO2EMISSIONS)) +
   geom_point(alpha = 0.6) +
   geom_smooth(method = "lm", color = "darkgreen") +
   theme_minimal() +
@@ -335,8 +432,8 @@ This plot also shows a positive trend. Vehicles with bigger engines usually prod
 
 
 
-```{r pressure, echo=FALSE}
-ggplot(data, aes(x = FUELTYPE, y = CO2EMISSIONS, fill = FUELTYPE)) +
+```{r ggplot-fueltype}
+ggplot(regression, aes(x = FUELTYPE, y = CO2EMISSIONS, fill = FUELTYPE)) +
   geom_boxplot() +
   theme_minimal() +
   labs(title = "CO2 Emissions by Fuel Type", x = "Fuel Type", y = "CO2 Emissions (g/km)") +
@@ -350,22 +447,18 @@ Vehicles using fuel type E tend to have the highest CO2 emissions based on the m
 Fuel type D shows the lowest median emissions.
 All fuel types show some variation, but type E also has a wider range and more high outliers.
 
-```{r pressure, echo=FALSE}
-install.packages("GGally")
-library(GGally)
-library(dplyr)
 
-ggpairs(data %>% select(ENGINESIZE, CYLINDERS, FUELCONSUMPTION_COMB, CO2EMISSIONS))
+```{r ggpairs}
+
+ggpairs(regression %>% select(ENGINESIZE, CYLINDERS, FUELCONSUMPTION_COMB, CO2EMISSIONS))
 
 ```
 
 
-
-```{r pressure, echo=FALSE}
 library(corrplot)
-library(dplyr)
+```{r numeric-columns}
 # Only numeric columns
-cor_data <- data %>% select_if(is.numeric)
+cor_data <- regression %>% select_if(is.numeric)
 cor_matrix <- cor(cor_data)
 
 # Plot
@@ -390,18 +483,16 @@ MODELYEAR has no clear connection with the other variables.
 
 
 Simple Linear Regression
-
-```{r pressure, echo=FALSE}
+```{r linear-model}
 # Fit the model
-model_simple <- lm(CO2EMISSIONS ~ FUELCONSUMPTION_COMB, data = data)
+model_simple <- lm(CO2EMISSIONS ~ FUELCONSUMPTION_COMB, data = regression)
 
 # See the summary
 summary(model_simple)
 ```
 
-```{r pressure, echo=FALSE}
-library(ggplot2)
-ggplot(data, aes(x = FUELCONSUMPTION_COMB, y = CO2EMISSIONS)) +
+```{r ggplot-fuelconsumption}
+ggplot(regression, aes(x = FUELCONSUMPTION_COMB, y = CO2EMISSIONS)) +
   geom_point(color = "black", alpha = 0.6) +
   geom_smooth(method = "lm", color = "blue") +
   labs(title = "Simple Linear Regression: CO2 vs Fuel Consumption",
@@ -409,16 +500,36 @@ ggplot(data, aes(x = FUELCONSUMPTION_COMB, y = CO2EMISSIONS)) +
        y = "CO2 Emissions (g/km)") +
   theme_minimal()
 ```
-```{r pressure, echo=FALSE}
+
+```{r model-engine}
 # Simple linear regression: CO2 vs Engine Size
-model_engine <- lm(CO2EMISSIONS ~ ENGINESIZE, data = data)
+model_engine <- lm(CO2EMISSIONS ~ ENGINESIZE, data = regression)
 
 # Show the summary
 summary(model_engine)
 ```
+The linear model:
 
-```{r pressure, echo=FALSE}
-ggplot(data, aes(x = ENGINESIZE, y = CO2EMISSIONS)) +
+CO2EMISSIONS =125.30+39.13×ENGINESIZE
+
+The null hyppothesis (H0) is that engine size has no effect on CO2 emissions (H0: β1 = 0)
+
+The alternative hypothesis(H1) is that engine size does have an effect on CO2 emissions. (H1: β1 != 0)
+
+The p-value for the ENGINESIZE coefficient is < 2e-16, which is much smaller than the significance level of 0.05.
+Therefore, we reject the null hypothesis and conclude that engine size has a statistically significant effect on CO2 emissions.
+
+
+Model Fit:
+
+R-squared = 0.7641 ,where ~76.4% of the variability in CO2 emissions is explained by engine size alone This is quite strong for a single predictor
+Adjusted R-squared = 0.7639 .Almost the same, which confirms the model isn’t overfitting.
+
+
+
+
+```{r ggplot co2-engine}
+ggplot(regression, aes(x = ENGINESIZE, y = CO2EMISSIONS)) +
   geom_point(alpha = 0.6) +
   geom_smooth(method = "lm", color = "red") +
   labs(title = "Simple Linear Regression: CO2 vs Engine Size",
@@ -438,30 +549,59 @@ Note that the `echo = FALSE` parameter was added to the code chunk to prevent pr
 
 
 
-#Model Evaluation 
-```{r pressure, echo=FALSE}
-library(ggplot2)
-model_multi <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB , data = data)
+Model Evaluation 
+
+Full model
+
+```{r model full}
+model_full <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_CITY +
+                   FUELCONSUMPTION_HWY + FUELCONSUMPTION_COMB + FUELCONSUMPTION_COMB_MPG,
+                 data = regression)
+summary(model_full)
+```
+
+
+
+
+
+
+Let’s use a few relevant predictors from your correlation matrix:
+ENGINESIZE, CYLINDERS, FUELCONSUMPTION_COMB
+
+```{r model-multi}
+model_multi <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB , data = regression)
 summary(model_multi)
+```
 
-library(caret)
+The multiple linear regression model with ENGINESIZE, CYLINDERS, and FUELCONSUMPTION_COMB as predictors explains 86.4% of the variance in CO2EMISSIONS. All three predictors are statistically significant (p < 0.001), and the model provides a notably better fit than the simple linear regression model. Hence, we conclude that engine size, number of cylinders, and combined fuel consumption all have a significant impact on CO2 emissions.
 
-set.seed(123)
-split <- createDataPartition(data$CO2EMISSIONS, p = 0.8, list = FALSE)
-train <- data[split, ]
-test <- data[-split, ]
 
+
+
+
+
+
+
+
+```{r split}
+
+split <- createDataPartition(regression$CO2EMISSIONS, p = 0.8, list = FALSE)
+train <- regression[split, ]
+test <- regression[-split, ]
+```
+
+```{r model-final}
 model_final <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB , data = train)
 predictions <- predict(model_final, test)
 
 # RMSE
 rmse <- sqrt(mean((predictions - test$CO2EMISSIONS)^2))
 rmse
+```
 
-#We evaluate the model by splitting the data into training and test sets (80/20). We then compare actual vs predicted values and inspect residuals.
-``` 
+We evaluate the model by splitting the data into training and test sets (80/20). We then compare actual vs predicted values and inspect residuals.
 
-```{r pressure, echo=FALSE}
+```{r actual-predict}
 # Plot: Actual vs Predicted
 ggplot(data.frame(Actual = test$CO2EMISSIONS, Predicted = predictions),
        aes(x = Actual, y = Predicted)) +
@@ -476,7 +616,7 @@ ggplot(data.frame(Actual = test$CO2EMISSIONS, Predicted = predictions),
 
 
 
-```{r pressure, echo=FALSE}
+```{r residuals}
 residuals <- test$CO2EMISSIONS - predictions
 
 ggplot(data.frame(Residuals = residuals), aes(x = Residuals)) +
@@ -490,7 +630,7 @@ ggplot(data.frame(Residuals = residuals), aes(x = Residuals)) +
 ```
 
 
-```{r pressure, echo=FALSE}
+```{r dataframe-res}
 ggplot(data.frame(Residuals = residuals), aes(x = "", y = Residuals)) +
   geom_boxplot(fill = "lightblue") +
   theme_minimal() +
