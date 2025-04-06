@@ -350,22 +350,5 @@ round(prop.table(table(data$Alzheimer.s.Diagnosis)) * 100, 2)
 ```
 The distribution of Alzheimer’s diagnosis shows that approximately 58% of individuals are not diagnosed with the disease, while 42% are. 
 
-HIIII
-geiaaaaaaa
-<<<<<<< Updated upstream
-TICHUUUU
-byeeeeeeeee
-<<<<<<< Updated upstream
-12344568900
-=======
-=======
-akdffjkfkefe
 
->>>>>>> Stashed changes
->>>>>>> Stashed changes
-
-
-ANOLA
-
-hi there shitheads
 
