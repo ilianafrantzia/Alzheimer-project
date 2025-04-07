@@ -350,5 +350,83 @@ round(prop.table(table(data$Alzheimer.s.Diagnosis)) * 100, 2)
 ```
 The distribution of Alzheimer’s diagnosis shows that approximately 58% of individuals are not diagnosed with the disease, while 42% are. 
 
+ELENI------
 
+```{r predictions}
+glm.fit <- glm(Alzheimer.s.Diagnosis ~ ., data = data, family = binomial)
+summary(glm.fit)
+
+
+# This helps automatically drop variables that don’t improve the model.
+# Stepwise model selection (both directions)
+step_model <- step(glm.fit, direction = "both")
+
+# View summary of the updated model
+summary(step_model)
+
+install.packages("car")  # only do this once
+library(car)
+vif(step_model)
+
+pred_probs <- predict(step_model, type = "response")
+# Step 1: Create default class vector (assume Negative)
+glm_pred <- rep("Negative", length(pred_probs))
+
+# Step 2: Set to Positive if prob > 0.5
+glm_pred[pred_probs > 0.5] <- "Positive"
+
+# Step 3: Check a few predictions
+head(glm_pred)
+
+# Step 4: Compare to actual
+table(Predicted = glm_pred, Actual = data$Alzheimer.s.Diagnosis)
+```
+
+Commenting on the logistic regression output: 
+
+- Model type: Binary logistic regression using glm() with family = binomial
+- Target variable: Alzheimer's Diagnosis
+- Sample size: 74,283 observations
+- AIC (Akaike Information Criterion): 80,503 — lower AIC is better for model comparison, but on its own, not interpretable.
+- Residual deviance: 80,393 — compared to null deviance (100,742), this shows your model explains some variability, which is good.
+- Fisher scoring iterations: 4 — indicates convergence was achieved quickly.
+
+
+Some conclusions:
+
+1. Risk increases with age.
+2. Higher likelihood in Brazil, India, Mexico, Russia, South Africa compared to the baseline (likely the first country alphabetically). - (Positive coefficients)
+3. Lower likelihood in Canada, Japan, Norway, Sweden.  
+4. Genetic Risk Factor (APOE ε4 allele): Yes -> Strongest predictor in your model. Significantly increases risk.
+
+
+In the code above we simplified the logistic regression model using stepwise selection, which means that 
+our final model includes only the following predictors:
+
+- Country  
+- Age  
+- Family.History.of.Alzheimer.s  
+- Genetic.Risk.Factor..APOE.ε4.allele.  
+- Urban.vs.Rural.Living  
+
+
+✅ Accuracy is decent (71.6%)
+🟡 Sensitivity (60.9%) is moderate — your model catches about 61% of actual Alzheimer's cases.
+🟢 Specificity (79.1%) is good — it correctly identifies most people who don’t have Alzheimer’s.
+This suggests your model is slightly better at ruling out Alzheimer’s (true negatives) than detecting 
+it (true positives), which is common in imbalanced or subtle medical data.
+
+
+The VIF (Variance Inflation Factor) results that we get above are excellent. What we see:
+
+Variable	                      VIF	                Interpretation
+Country	                        1.015	            No multicollinearity (great!)
+Age	                            1.072	            Very low — no issues
+Family History of Alzheimer's	  1.027	            Very low — safe
+APOE ε4 Genetic Risk	          1.045	            Very low — safe
+Urban vs Rural Living	          1.000	            Practically perfect
+
+What do the above mean?
+No multicollinearity at all in your final model.
+This confirms that your predictors are statistically independent enough to trust the regression coefficients and p-values. We're good to go on interpretation, prediction, and evaluation.
 
