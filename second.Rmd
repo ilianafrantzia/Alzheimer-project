@@ -67,6 +67,12 @@ Statistical summary of numerical variables :
 summary(regression)
 ```
 
+```{r maximum}
+sapply(regression[sapply(regression, is.numeric)], max, na.rm = TRUE)
+
+```
+
+
 - ENGINE_SIZE: Ranges from 1.0 to 8.4 liters and the mean engine size is 3.35 L, suggesting that most      cars   have moderate engine sizes
 - CYLINDERS: Ranges from 3 to 12 cylinders, with a median of 6 cylinders and the average number of         cylinders is around 5.8
 - FUELCONSUMPTION_CITY / HWY / COMB: Combined fuel consumption (L/100 km) ranges from 4.7 to 25.8 and the   mean combined fuel consumption is 11.58, indicating a mix of fuel-efficient and less efficient vehicles
@@ -78,6 +84,21 @@ summary(regression)
 From the summary table we can observe that vehicles with larger engines and more cylinders tend to have higher fuel consumption and CO₂ emissions.
 
 Also,there's a wide variety of fuel efficiency, from very eco-friendly models to high-emission vehicles.
+
+
+```{r}
+# Model with the highest CO2 emissions
+regression$MODEL[which.max(regression$CO2EMISSIONS)]
+
+# Model with the lowest CO2 emissions
+regression$MODEL[which.min(regression$CO2EMISSIONS)]
+```
+
+The vehicle model with the highest CO₂ emissions is the E350 WAGON, emitting ___ g/km, while the model with the lowest CO₂ emissions is the ____, emitting only ___ g/km.
+
+
+
+
 
 
 Count the number missing values per column
@@ -114,6 +135,14 @@ The dataset contains a rich variety of categorical features, including 39 car ma
 
 All categorical columns are free of spelling errors, case inconsistencies, or data entry mistakes.
 
+Since in our dataset all the values in MODELYEAR are equal to 2014, it does not give any information to our analysis and we are going to drop the column.
+
+```{r drop-MODELYEAR}
+regression <- regression[, !names(regression) %in% "MODELYEAR"]
+head(regression)
+```
+
+
 
 ## Numerical columns plots
 
@@ -128,6 +157,14 @@ ggplot(regression, aes(x = ENGINESIZE)) +
 
 Most vehicles have engine sizes between 2.0 and 4.0 liters, with notable peaks around 2.0L and 3.5L. The distribution is right-skewed, meaning that while smaller engines are very common, a smaller number of vehicles have larger engines (above 5.0L). This suggests that most vehicles in the dataset are built with fuel efficiency in mind, while larger engines are limited to performance.
 
+Boxplot:
+```{r boxplot-enginesize}
+boxplot(regression$ENGINESIZE, 
+        main = "ENGINE SIZE",
+        ylab = "ENGINE SIZE",
+        col = "lightblue")
+
+```
 
 
 Histogram of Cylinders distribution
@@ -153,7 +190,13 @@ ggplot(regression, aes(x = FUELCONSUMPTION_CITY)) +
 The histogram shows the distribution of fuel consumption in city driving conditions, measured in liters per 100 kilometers (L/100 km). Most vehicles consume between 8 and 15 L/100 km, with a clear peak around 11–13 L/100 km, suggesting that this is the typical range for city fuel efficiency in 2014 vehicles.
 The distribution is right-skewed, showing that while most cars are moderately fuel-efficient in the city, there are several vehicles with much higher consumption, reaching up to 30 L/100 km. These higher values likely correspond to larger, heavier or performance vehicles.
 
+```{r fuelconsCITY-boxplot}
+boxplot(regression$FUELCONSUMPTION_CITY, 
+        main = "FUEL CONSUMPTION CITY",
+        ylab = "FUEL CITY",
+        col = "lightblue")
 
+```
 
 Histogram of Fuel Consumption Highway distribution
 
@@ -165,7 +208,13 @@ ggplot(regression, aes(x = FUELCONSUMPTION_HWY)) +
 
 This histogram displays the distribution of fuel consumption during highway driving, measured in liters per 100 kilometers (L/100 km). Most vehicles consume between 7 and 11 L/100 km, with a clear peak around 8 to 9 L/100 km, suggesting that highway driving is generally more fuel-efficient compared to city driving.Similar to the city fuel consumption plot, the distribution is right-skewed, with a smaller number of vehicles showing much higher highway fuel use, exceeding 15 L/100 km. These outliers likely correspond to larger or high-performance vehicles that are less optimized for long-distance efficiency.
 
+```{r fuelconsHWY-boxplot}
+boxplot(regression$FUELCONSUMPTION_HWY, 
+        main = "FUEL CONSUMPTION HIGHWAY",
+        ylab = "hwy",
+        col = "lightblue")
 
+```
 
 Histogram of Fuel Consumption Combined distribution
 
@@ -179,6 +228,20 @@ This histogram shows the distribution of combined fuel consumption, which averag
 
 
 
+Boxplot of fuel consumption combined
+
+```{r fuelconsCOMB-boxplot}
+boxplot(regression$FUELCONSUMPTION_COMB, 
+        main = "FUEL CONSUMPTION COMBINED",
+        ylab = "comb",
+        col = "lightblue")
+
+```
+
+
+
+
+
 Histogram of Fuel Consumption MPG distribution
 
 ```{r hist-fuel-mpg}
@@ -188,6 +251,18 @@ ggplot(regression, aes(x = FUELCONSUMPTION_COMB_MPG)) +
 ```
 
 This histogram displays the combined fuel consumption in miles per gallon (MPG), which is a commonly used measure of vehicle fuel efficiency. Higher MPG values indicate better fuel economy. Most vehicles in the dataset fall between 15 and 35 MPG, with a peak around 25 to 30 MPG.The distribution is left-skewed, since a higher MPG is better and fewer vehicles reach the high-efficiency range above 40 MPG. 
+
+
+Boxplot of fuel consumption combined mpg:
+
+```{r fuelconsHWY-boxplot}
+boxplot(regression$FUELCONSUMPTION_COMB_MPG, 
+        main = "FUEL CONSUMPTION COMBINED MPG",
+        ylab = "comb mpg",
+        col = "lightblue")
+
+```
+
 
 
 Histogram of CO2 Emissions distribution
@@ -211,7 +286,14 @@ skewness(regression$CO2EMISSIONS)
 
 As we can observe the skewness is >0.5 comfirming that the distribution is slightly right skewed.
 
+```{r boxplot co2}
+boxplot(regression$CO2EMISSIONS, 
+        main = "CO2 EMISSIONS",
+        ylab = "CO2 EMISSIONS",
+        col = "lightblue")
 
+
+```
 
 CO2EMISSIONS: Most values are concentrated between 150 and 300 g/km, with a gradual decline toward higher emissions. This suggests that have a slightly skewed distribution.
 
@@ -222,6 +304,32 @@ ENGINESIZE: Smaller engines (2 to 3.5 liters) are more common, while larger engi
 FUELCONSUMPTION_COMB: The majority of vehicles consume around 8 to 12 liters per 100 km. Fewer vehicles fall into the higher consumption range, again showing a right-skewed shape.
 
 
+
+We are going to create a new dataframe without outliers just so we can compare the models on the two dataframes.
+
+```{r create-new-dataframe-no-outliers}
+# Step 1: Select only numeric columns
+numeric_cols <- sapply(regression, is.numeric)
+
+# Step 2: Define a function to remove outliers based on IQR
+remove_outliers <- function(df) {
+  for (col in names(df)) {
+    if (is.numeric(df[[col]])) {
+      Q1 <- quantile(df[[col]], 0.25, na.rm = TRUE)
+      Q3 <- quantile(df[[col]], 0.75, na.rm = TRUE)
+      IQR_value <- Q3 - Q1
+      lower_bound <- Q1 - 1.5 * IQR_value
+      upper_bound <- Q3 + 1.5 * IQR_value
+      
+      df <- df[df[[col]] >= lower_bound & df[[col]] <= upper_bound, ]
+    }
+  }
+  return(df)
+}
+
+# Step 3: Apply the function to your dataset
+regression_no_outliers <- remove_outliers(regression)
+```
 
 ## Categorical columns plots 
 
@@ -292,6 +400,9 @@ ggplot(regression, aes(x = FUELTYPE, fill = FUELTYPE)) +
 The fuel type distribution chart reveals that the majority of vehicles in the dataset run on regular gasoline (X), followed closely by those using premium gasoline (Z). In contrast, vehicles that use ethanol (E85) and diesel (D) are significantly less common. This suggests that the dataset is heavily weighted toward traditional gasoline-powered vehicles, which reflects market trends in 2014.It is important to consider this imbalance when analyzing fuel consumption and CO₂ emissions, as different fuel types have distinct environmental and performance characteristics.
 
 
+
+
+
 ```{r bar-transmission}
 ggplot(regression, aes(x = fct_rev(fct_infreq(TRANSMISSION)), fill = VEHICLECLASS)) +
   geom_bar(fill = "skyblue") +
@@ -305,9 +416,41 @@ ggplot(regression, aes(x = fct_rev(fct_infreq(TRANSMISSION)), fill = VEHICLECLAS
 
 The bar chart shows the distribution of transmission types in the dataset, represented by coded labels. The most common transmission types are A6 (6-speed automatic), AS6 (6-speed automatic with manual mode), and M6 (6-speed manual), indicating that 6-speed systems dominate among the recorded vehicles. Other frequently appearing codes include A8 and AS8, which reflect more modern 8-speed automatics.However, it is clear that automatic transmissions are more prevalent.This variation in transmission types may affect fuel efficiency and CO₂ emissions, as different transmission technologies can influence engine performance and vehicle efficiency. 
 
+
+
+```{r pairs}
+# Select only numeric columns
+numeric_data <- regression[, sapply(regression, is.numeric)]
+
+# Create scatterplot matrix
+pairs(numeric_data, main = "Scatterplot Matrix of Numeric Variables")
+
+```
+
+There is a strong positive correlation between:
+
+ENGINESIZE and CO2EMISSIONS
+CYLINDERS and CO2EMISSIONS
+FUELCONSUMPTION_COMB and CO2EMISSIONS
+FUELCONSUMPTION_CITY and FUELCONSUMPTION_HWY
+FUELCONSUMPTION_COMB and both CITY and HWY consumption
+
+There is also a strong negative correlation between:
+
+FUELCONSUMPTION_COMB_MPG and CO2EMISSIONS, as well as other fuel consumption variables
+(This makes sense: higher MPG means lower fuel use → lower emissions)
+Some variables like MODELYEAR show no variation (constant in 2014), and therefore do not contribute useful information in a regression context.
+
+This matrix supports the inclusion of variables like ENGINESIZE, FUELCONSUMPTION_COMB, and CYLINDERS as strong predictors in the regression model. It also raises the possibility of multicollinearity among fuel consumption variables, which should be investigated further using tools like the Variance Inflation Factor (VIF).
+
+
+
+
+
+
 ```{r mpg diff}
 
-# 1. MPG Difference Check Without Creating a Column
+# 1. MPG Difference Check 
 calculated_mpg <- 235.214583 / regression$FUELCONSUMPTION_COMB
 mpg_diff <- regression$FUELCONSUMPTION_COMB_MPG - calculated_mpg
 
@@ -482,17 +625,25 @@ FUELCONSUMPTION_COMB_MPG is negatively related to CO2 (more MPG = less emissions
 MODELYEAR has no clear connection with the other variables.
 
 
+We are going to split our data to train and test sets.
+```{r split}
+
+split <- createDataPartition(regression$CO2EMISSIONS, p = 0.8, list = FALSE)
+train <- regression[split, ]
+test <- regression[-split, ]
+```
+
 Simple Linear Regression
 ```{r linear-model}
 # Fit the model
-model_simple <- lm(CO2EMISSIONS ~ FUELCONSUMPTION_COMB, data = regression)
+model_simple <- lm(CO2EMISSIONS ~ FUELCONSUMPTION_COMB, data = train)
 
 # See the summary
 summary(model_simple)
 ```
 
 ```{r ggplot-fuelconsumption}
-ggplot(regression, aes(x = FUELCONSUMPTION_COMB, y = CO2EMISSIONS)) +
+ggplot(train, aes(x = FUELCONSUMPTION_COMB, y = CO2EMISSIONS)) +
   geom_point(color = "black", alpha = 0.6) +
   geom_smooth(method = "lm", color = "blue") +
   labs(title = "Simple Linear Regression: CO2 vs Fuel Consumption",
@@ -503,7 +654,7 @@ ggplot(regression, aes(x = FUELCONSUMPTION_COMB, y = CO2EMISSIONS)) +
 
 ```{r model-engine}
 # Simple linear regression: CO2 vs Engine Size
-model_engine <- lm(CO2EMISSIONS ~ ENGINESIZE, data = regression)
+model_engine <- lm(CO2EMISSIONS ~ ENGINESIZE, data = train)
 
 # Show the summary
 summary(model_engine)
@@ -529,7 +680,7 @@ Adjusted R-squared = 0.7639 .Almost the same, which confirms the model isn’t o
 
 
 ```{r ggplot co2-engine}
-ggplot(regression, aes(x = ENGINESIZE, y = CO2EMISSIONS)) +
+ggplot(train, aes(x = ENGINESIZE, y = CO2EMISSIONS)) +
   geom_point(alpha = 0.6) +
   geom_smooth(method = "lm", color = "red") +
   labs(title = "Simple Linear Regression: CO2 vs Engine Size",
@@ -556,12 +707,38 @@ Full model
 ```{r model full}
 model_full <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_CITY +
                    FUELCONSUMPTION_HWY + FUELCONSUMPTION_COMB + FUELCONSUMPTION_COMB_MPG,
-                 data = regression)
+                 data = train)
 summary(model_full)
+```
+```{r name-model}
+names(model_full)
+```
+
+```{r coef-model}
+coef(model_full)
+```
+```{r predict-full}
+predict(model_full, 
+        data.frame(
+          ENGINESIZE = c(2.0, 3.0, 4.0),        # variable you're changing
+          CYLINDERS = 6,
+          FUELCONSUMPTION_CITY = 12.0,
+          FUELCONSUMPTION_HWY = 8.5,
+          FUELCONSUMPTION_COMB = 10.2,
+          FUELCONSUMPTION_COMB_MPG = 27
+        ), 
+        interval = "confidence")
+
 ```
 
 
 
+
+
+```{r modelfull-plot}
+par(mfrow = c(2, 2))
+plot(model_full)
+```
 
 
 
@@ -569,7 +746,7 @@ Let’s use a few relevant predictors from your correlation matrix:
 ENGINESIZE, CYLINDERS, FUELCONSUMPTION_COMB
 
 ```{r model-multi}
-model_multi <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB , data = regression)
+model_multi <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB , data = train)
 summary(model_multi)
 ```
 
@@ -577,18 +754,6 @@ The multiple linear regression model with ENGINESIZE, CYLINDERS, and FUELCONSUMP
 
 
 
-
-
-
-
-
-
-```{r split}
-
-split <- createDataPartition(regression$CO2EMISSIONS, p = 0.8, list = FALSE)
-train <- regression[split, ]
-test <- regression[-split, ]
-```
 
 ```{r model-final}
 model_final <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB , data = train)
@@ -641,8 +806,201 @@ ggplot(data.frame(Residuals = residuals), aes(x = "", y = Residuals)) +
 ```
 
 
+Now we are going to perform the models we did above for the dataset with no outliers.
+
+We are going to split our data again to train and test sets.
+```{r split-no-outliers}
+
+split_no_outliers <- createDataPartition(regression_no_outliers$CO2EMISSIONS, p = 0.8, list = FALSE)
+train_no_outliers <- regression[split, ]
+test_no_outliers <- regression[-split, ]
+```
+
+Simple Linear Regression
+```{r linear-model-no-outliers}
+# Fit the model
+model_simple_no_outliers <- lm(CO2EMISSIONS ~ FUELCONSUMPTION_COMB, data = train_no_outliers)
+
+# See the summary
+summary(model_simple_no_outliers)
+```
+
+```{r ggplot-fuelconsumption-no-outliers}
+ggplot(train_no_outliers, aes(x = FUELCONSUMPTION_COMB, y = CO2EMISSIONS)) +
+  geom_point(color = "black", alpha = 0.6) +
+  geom_smooth(method = "lm", color = "blue") +
+  labs(title = "Simple Linear Regression: CO2 vs Fuel Consumption",
+       x = "Combined Fuel Consumption (L/100km)",
+       y = "CO2 Emissions (g/km)") +
+  theme_minimal()
+```
+
+```{r model-engine-no-outliers}
+# Simple linear regression: CO2 vs Engine Size
+model_engine_no_outliers <- lm(CO2EMISSIONS ~ ENGINESIZE, data = train_no_outliers)
+
+# Show the summary
+summary(model_engine_no_outliers)
+```
 
 
+
+
+```{r ggplot co2-engine-no-outliers}
+ggplot(train_no_outliers, aes(x = ENGINESIZE, y = CO2EMISSIONS)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", color = "red") +
+  labs(title = "Simple Linear Regression: CO2 vs Engine Size",
+       x = "Engine Size (L)",
+       y = "CO2 Emissions (g/km)") +
+  theme_minimal()
+```
+
+
+
+Model Evaluation 
+
+Full model
+
+```{r model full-no-outliers}
+model_full_no_outliers <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_CITY +
+                   FUELCONSUMPTION_HWY + FUELCONSUMPTION_COMB + FUELCONSUMPTION_COMB_MPG,
+                 data = train_no_outliers)
+summary(model_full_no_outliers)
+```
+```{r name-model-no-outliers}
+names(model_full_no_outliers)
+```
+
+```{r coef-model-no-outliers}
+coef(model_full_no_outliers)
+```
+```{r predict-full-no-outliers}
+predict(model_full_no_outliers, 
+        data.frame(
+          ENGINESIZE = c(2.0, 3.0, 4.0),        # variable you're changing
+          CYLINDERS = 6,
+          FUELCONSUMPTION_CITY = 12.0,
+          FUELCONSUMPTION_HWY = 8.5,
+          FUELCONSUMPTION_COMB = 10.2,
+          FUELCONSUMPTION_COMB_MPG = 27
+        ), 
+        interval = "confidence")
+
+```
+
+
+```{r modelfull-plot-no-outliers}
+par(mfrow = c(2, 2))
+plot(model_full_no_outliers)
+```
+
+
+
+Let’s use a few relevant predictors from your correlation matrix:
+ENGINESIZE, CYLINDERS, FUELCONSUMPTION_COMB
+
+```{r model-multi-no-outliers}
+model_multi_no_outliers <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB , data = train_no_outliers)
+summary(model_multi_no_outliers)
+```
+
+
+
+```{r model-final-no-outliers}
+model_final_no_outliers <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB , data = train_no_outliers)
+predictions_no_outliers <- predict(model_final_no_outliers, newdata = test_no_outliers)
+
+
+# RMSE
+rmse_no_outliers <- sqrt(mean((predictions_no_outliers - test_no_outliers$CO2EMISSIONS)^2))
+rmse_no_outliers
+```
+
+```{r actual-predict-no-outliers}
+ggplot(data.frame(Actual = test_no_outliers$CO2EMISSIONS, 
+                  Predicted = predictions_no_outliers),
+       aes(x = Actual, y = Predicted)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, color = "blue") +
+  theme_minimal() +
+  labs(title = "Actual vs Predicted CO₂ Emissions",
+       x = "Actual CO₂",
+       y = "Predicted CO₂")
+```
+```{r residuals-no-outliers}
+length(test_no_outliers$CO2EMISSIONS)
+length(predictions_no_outliers)
+```
+
+
+
+```{r residuals-no-outliers-2}
+residuals_no_outliers <- test_no_outliers$CO2EMISSIONS - predictions_no_outliers
+
+ggplot(data.frame(Residuals = residuals_no_outliers), aes(x = Residuals)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
+  theme_minimal() +
+  labs(title = "Distribution of Residuals",
+       x = "Residuals (Actual - Predicted)",
+       y = "Count")
+
+
+```
+
+
+```{r dataframe-res-no-outliers}
+ggplot(data.frame(Residuals = residuals_no_outliers), aes(x = "", y = Residuals)) +
+  geom_boxplot(fill = "lightblue") +
+  theme_minimal() +
+  labs(title = "Boxplot of Residuals",
+       x = "",
+       y = "Residuals (Actual - Predicted)")
+
+```
+
+
+## COMPARE RESULTS
+
+```{r compare}
+get_model_metrics <- function(model, test_data, target = "CO2EMISSIONS") {
+  predictions <- predict(model, newdata = test_data)
+  actual <- test_data[[target]]
+  
+  rmse <- sqrt(mean((predictions - actual)^2))
+  r_squared <- summary(model)$r.squared
+  
+  data.frame(
+    Model = deparse(formula(model)[[3]]),
+    R_squared = round(r_squared, 4),
+    RMSE = round(rmse, 4)
+  )
+}
+
+results_no_outliers <- rbind(
+  cbind(Dataset = "No Outliers", get_model_metrics(model_simple_no_outliers, test_no_outliers)),
+  cbind(Dataset = "No Outliers", get_model_metrics(model_engine_no_outliers, test_no_outliers)),
+  cbind(Dataset = "No Outliers", get_model_metrics(model_full_no_outliers, test_no_outliers)),
+  cbind(Dataset = "No Outliers", get_model_metrics(model_multi_no_outliers, test_no_outliers)),
+  cbind(Dataset = "No Outliers", get_model_metrics(model_final_no_outliers, test_no_outliers))
+)
+
+results_with_outliers <- rbind(
+  cbind(Dataset = "With Outliers", get_model_metrics(model_simple, test)),
+  cbind(Dataset = "With Outliers", get_model_metrics(model_engine, test)),
+  cbind(Dataset = "With Outliers", get_model_metrics(model_full, test)),
+  cbind(Dataset = "With Outliers", get_model_metrics(model_multi, test)),
+  cbind(Dataset = "With Outliers", get_model_metrics(model_final, test))
+)
+
+
+comparison_table <- rbind(results_with_outliers, results_no_outliers)
+
+# Display using knitr::kable (if in R Markdown)
+knitr::kable(comparison_table, caption = "Model Performance Comparison (With vs Without Outliers)")
+
+
+```
 
 Conclusion
 
