@@ -38,7 +38,9 @@ library(corrplot)
 library(caret)
 library(tidyr)
 library(GGally)
-
+library(car)
+library(glmnet)
+library(leaps)
 ```
 
 Load the FuelConsumption dataset and preview the first 6 rows of the dataset.
@@ -418,34 +420,6 @@ The bar chart shows the distribution of transmission types in the dataset, repre
 
 
 
-```{r pairs}
-# Select only numeric columns
-numeric_data <- regression[, sapply(regression, is.numeric)]
-
-# Create scatterplot matrix
-pairs(numeric_data, main = "Scatterplot Matrix of Numeric Variables")
-
-```
-
-There is a strong positive correlation between:
-
-ENGINESIZE and CO2EMISSIONS
-CYLINDERS and CO2EMISSIONS
-FUELCONSUMPTION_COMB and CO2EMISSIONS
-FUELCONSUMPTION_CITY and FUELCONSUMPTION_HWY
-FUELCONSUMPTION_COMB and both CITY and HWY consumption
-
-There is also a strong negative correlation between:
-
-FUELCONSUMPTION_COMB_MPG and CO2EMISSIONS, as well as other fuel consumption variables
-(This makes sense: higher MPG means lower fuel use → lower emissions)
-Some variables like MODELYEAR show no variation (constant in 2014), and therefore do not contribute useful information in a regression context.
-
-This matrix supports the inclusion of variables like ENGINESIZE, FUELCONSUMPTION_COMB, and CYLINDERS as strong predictors in the regression model. It also raises the possibility of multicollinearity among fuel consumption variables, which should be investigated further using tools like the Variance Inflation Factor (VIF).
-
-
-
-
 
 
 ```{r mpg diff}
@@ -591,14 +565,61 @@ Fuel type D shows the lowest median emissions.
 All fuel types show some variation, but type E also has a wider range and more high outliers.
 
 
-```{r ggpairs}
 
-ggpairs(regression %>% select(ENGINESIZE, CYLINDERS, FUELCONSUMPTION_COMB, CO2EMISSIONS))
+### Correlations with C02 Emissions
+
+```{r corr-co2}
+numeric_data <- regression[, sapply(regression, is.numeric)]
+cor_matrix <- cor(numeric_data, use = "complete.obs")
+cor_target <- cor_matrix[, "CO2EMISSIONS"]
+sort(cor_target, decreasing = TRUE)
 
 ```
 
+Scatterplot matrix of all numerical features
 
-library(corrplot)
+```{r pairs-numeric}
+
+
+# Create scatterplot matrix
+pairs(numeric_data, main = "Scatterplot Matrix of All Numeric Variables")
+
+```
+
+There is a strong positive correlation between:
+
+ENGINESIZE and CO2EMISSIONS
+CYLINDERS and CO2EMISSIONS
+FUELCONSUMPTION_COMB and CO2EMISSIONS
+FUELCONSUMPTION_CITY and FUELCONSUMPTION_HWY
+FUELCONSUMPTION_COMB and both CITY and HWY consumption
+
+There is also a strong negative correlation between:
+
+FUELCONSUMPTION_COMB_MPG and CO2EMISSIONS, as well as other fuel consumption variables
+(This makes sense: higher MPG means lower fuel use → lower emissions)
+Some variables like MODELYEAR show no variation (constant in 2014), and therefore do not contribute useful information in a regression context.
+
+This matrix supports the inclusion of variables like ENGINESIZE, FUELCONSUMPTION_COMB, and CYLINDERS as strong predictors in the regression model. It also raises the possibility of multicollinearity among fuel consumption variables, which should be investigated further using tools like the Variance Inflation Factor (VIF).
+
+
+
+
+Scatterplot matrux of selected features
+
+```{r}
+pairs(regression[, c("ENGINESIZE", "CYLINDERS", "FUELCONSUMPTION_COMB", "CO2EMISSIONS")],
+      main = "Scatterplot Matrix of Selected Variables")
+```
+
+The scatterplot matrix shows that fuel consumption, engine size, and number of cylinders all have a positive relationship with CO₂ emissions. This means that cars that use more fuel, have bigger engines, or more cylinders tend to produce more CO₂. Among these, fuel consumption has the strongest relationship with CO₂ emissions. The plot also shows that these three variables are related to each other, which could cause issues in a regression model. This suggests we should check for multicollinearity before using them all together in one model.
+
+
+
+
+
+
+
 ```{r numeric-columns}
 # Only numeric columns
 cor_data <- regression %>% select_if(is.numeric)
@@ -625,7 +646,71 @@ FUELCONSUMPTION_COMB_MPG is negatively related to CO2 (more MPG = less emissions
 MODELYEAR has no clear connection with the other variables.
 
 
-We are going to split our data to train and test sets.
+### Scatterplots with target variable
+
+```{r scatter-engine}
+ggplot(regression, aes(x = ENGINESIZE, y = CO2EMISSIONS)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Engine Size vs CO2 Emissions")
+```
+
+```{r scatter-cylinders}
+ggplot(regression, aes(x = CYLINDERS, y = CO2EMISSIONS)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Cylinders vs CO2 Emissions")
+```
+
+```{r scatter-fuel-city}
+ggplot(regression, aes(x = FUELCONSUMPTION_CITY, y = CO2EMISSIONS)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Fuel consumption city vs CO2 Emissions")
+```
+
+
+```{r scatter-fuel-hwy}
+ggplot(regression, aes(x = FUELCONSUMPTION_HWY, y = CO2EMISSIONS)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Fuel consumption highway vs CO2 Emissions")
+```
+
+```{r scatter-fuel-hwy}
+ggplot(regression, aes(x = FUELCONSUMPTION_COMB, y = CO2EMISSIONS)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Fuel consumption combined vs CO2 Emissions")
+```
+
+
+
+
+### Scale numerical features
+
+```{r scale}
+
+# Scale numeric predictors (excluding CO2EMISSIONS)
+fuel_scaled <- regression %>%
+  mutate(across(
+    .cols = c(ENGINESIZE, CYLINDERS, FUELCONSUMPTION_CITY, FUELCONSUMPTION_HWY, FUELCONSUMPTION_COMB, FUELCONSUMPTION_COMB_MPG),
+    .fns = scale
+  ))
+
+# Fit the regression model
+model_scaled <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_CITY + 
+                   FUELCONSUMPTION_HWY + FUELCONSUMPTION_COMB + FUELCONSUMPTION_COMB_MPG,
+                   data = fuel_scaled)
+
+# View standardized coefficients
+summary(model_scaled)
+```
+
+
+
+We are going to split our data to train and test sets (80% train data and 20% test data)
+
 ```{r split}
 
 split <- createDataPartition(regression$CO2EMISSIONS, p = 0.8, list = FALSE)
@@ -633,7 +718,77 @@ train <- regression[split, ]
 test <- regression[-split, ]
 ```
 
-Simple Linear Regression
+### Linear Regression Models
+
+
+```{r model full}
+model_full <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_CITY +
+                   FUELCONSUMPTION_HWY + FUELCONSUMPTION_COMB + FUELCONSUMPTION_COMB_MPG,
+                 data = train)
+summary(model_full)
+``` 
+ 
+A full linear regression model was built to predict CO₂ emissions using engine size, number of cylinders, and several fuel consumption measures. The model performed strongly with an R² of 88.2%, indicating it explains a large portion of the variability in emissions. Engine size, number of cylinders, and fuel efficiency (measured in miles per gallon) were statistically significant predictors. However, the fuel consumption variables in liters/100km were not significant, likely due to multicollinearity. This suggests that some variables may be redundant and could be removed to improve model clarity and reduce multicollinearity.
+
+
+Coefficients of your full linear regression model:
+
+```{r}
+Yhat_full= model_full$coefficients
+Yhat_full
+
+```
+
+Check for Multicollinearity:
+
+```{r vif-full}
+vif(model_full)
+
+```
+
+The full model showed extreme multicollinearity, especially among the fuel consumption variables (city,highway,combined), with VIF values exceeding 14,000 , this means that these variables are highly correlated with each other and keeping them all causes instability in our model. 
+
+
+A simplified model using only key variables (engine size, number of cylinders and combined fuel consumption) to improve model stability and interpretability
+
+```{r model-multi}
+model_multi <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB , data = train)
+summary(model_multi)
+```
+
+
+The multiple linear regression model was created to predict CO₂ emissions using engine size, number of cylinders and combined fuel consumption. The model worked very well, explaining about 86% (R² = 0.859) of the variation in CO₂ emissions. All three variables were statistically significant (p<0.001), meaning they each have a strong effect. The results showed that cars with bigger engines, more cylinders and higher fuel consumption produce more CO₂. This model is simpler and easier to understand than the full model, but still very accurate.
+
+
+
+
+```{r vif-multi}
+vif(model_multi)
+```
+
+The new model shows VIF values below 10 for all predictors, confirming that multicollinearity has been effectively reduced. This improves the reliability of the coefficient estimates and supports the use of this simpler model for interpretation and prediction.
+
+```{r model-hwy-city}
+model_city_hwy <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + 
+                     FUELCONSUMPTION_CITY + FUELCONSUMPTION_HWY, data = train)
+
+summary(model_city_hwy)
+```
+
+The multiple linear regression model was developed to predict CO₂ emissions using engine size, number of cylinders, fuel consumption in the city, and fuel consumption on the highway. The model performed well, explaining about 86% of the variation in CO₂ emissions (R² = 0.859). All four variables were statistically significant, meaning they each have a strong impact on emissions. The results showed that vehicles with larger engines, more cylinders, and higher fuel consumption in both city and highway driving tend to produce more CO₂. This model highlights how both types of driving conditions contribute to emissions.
+
+
+```{r vif-city-hwy}
+vif(model_city_hwy)
+
+```
+
+The model using both city and highway fuel consumption produced high VIF values (above 20), indicating strong multicollinearity between these variables.So the best model with the lowest multicollinearity is the one with fuel consumption combined.
+
+
+
+Simple linear models 
+
 ```{r linear-model}
 # Fit the model
 model_simple <- lm(CO2EMISSIONS ~ FUELCONSUMPTION_COMB, data = train)
@@ -702,35 +857,52 @@ Note that the `echo = FALSE` parameter was added to the code chunk to prevent pr
 
 Model Evaluation 
 
-Full model
-
-```{r model full}
-model_full <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_CITY +
-                   FUELCONSUMPTION_HWY + FUELCONSUMPTION_COMB + FUELCONSUMPTION_COMB_MPG,
-                 data = train)
-summary(model_full)
-```
-```{r name-model}
-names(model_full)
-```
 
 ```{r coef-model}
 coef(model_full)
 ```
+
 ```{r predict-full}
-predict(model_full, 
-        data.frame(
-          ENGINESIZE = c(2.0, 3.0, 4.0),        # variable you're changing
-          CYLINDERS = 6,
-          FUELCONSUMPTION_CITY = 12.0,
-          FUELCONSUMPTION_HWY = 8.5,
-          FUELCONSUMPTION_COMB = 10.2,
-          FUELCONSUMPTION_COMB_MPG = 27
-        ), 
-        interval = "confidence")
+# Predict on test data
+predicted_test <- predict(model_full, newdata = test)
+
+# Add predictions to test set
+test$predicted_CO2 <- predicted_test
+
+
+# Calculate Mean Absolute Error
+mae_full <- mean(abs(test$CO2EMISSIONS - test$predicted_CO2))
+
+# Root Mean Squared Error
+rmse_full <- sqrt(mean((test$CO2EMISSIONS - test$predicted_CO2)^2))
+
+# Print results
+mae_full
+rmse_full
 
 ```
 
+After training the full linear regression model, predictions were made on the test set to evaluate its performance. The Mean Absolute Error (MAE) was 12.7 g/km, meaning that, on average, the model's predictions were about 12.7 grams of CO₂ per kilometer off from the actual values. The Root Mean Squared Error (RMSE) was 18.5 g/km, which gives more weight to larger errors. These results indicate that the model makes fairly accurate predictions and performs well at estimating vehicle CO₂ emissions.
+
+
+
+
+Plot actual vs predicted CO2 Emissions
+
+```{r plot-actual-pred-co2}
+
+ggplot(test, aes(x = CO2EMISSIONS, y = predicted_CO2)) +
+  geom_point(color = "steelblue", alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, color = "red") +
+  labs(
+    title = "Actual vs Predicted CO2 Emissions",
+    x = "Actual CO2 Emissions (g/km)",
+    y = "Predicted CO2 Emissions (g/km)"
+  ) +
+  theme_minimal()
+```
+
+The scatterplot shows the relationship between the actual and predicted CO2 emissions for the vehicles in the test set. The red line represents perfect predictions (where predicted = actual). Most blue points are close to the red line, showing that the model makes performs well, with accurate predictions for a wide range of emission values.A few points deviate from the line, especially at higher emission levels, suggesting that the model  underestimates or overestimates emissions for some vehicles. However, the overall trend is strong and consistent, confirming that the model captures the relationship between the predictors and CO2 emissions effectively.
 
 
 
@@ -739,18 +911,6 @@ predict(model_full,
 par(mfrow = c(2, 2))
 plot(model_full)
 ```
-
-
-
-Let’s use a few relevant predictors from your correlation matrix:
-ENGINESIZE, CYLINDERS, FUELCONSUMPTION_COMB
-
-```{r model-multi}
-model_multi <- lm(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB , data = train)
-summary(model_multi)
-```
-
-The multiple linear regression model with ENGINESIZE, CYLINDERS, and FUELCONSUMPTION_COMB as predictors explains 86.4% of the variance in CO2EMISSIONS. All three predictors are statistically significant (p < 0.001), and the model provides a notably better fit than the simple linear regression model. Hence, we conclude that engine size, number of cylinders, and combined fuel consumption all have a significant impact on CO2 emissions.
 
 
 
@@ -928,6 +1088,7 @@ ggplot(data.frame(Actual = test_no_outliers$CO2EMISSIONS,
        x = "Actual CO₂",
        y = "Predicted CO₂")
 ```
+
 ```{r residuals-no-outliers}
 length(test_no_outliers$CO2EMISSIONS)
 length(predictions_no_outliers)
@@ -1009,3 +1170,259 @@ The most important variable in predicting CO2 emissions was FUELCONSUMPTION_COMB
 
 Was the model good?
 Yes, the final multiple regression model performed well. It explained a large part of the variation in CO2 emissions (high R² value), and its predictions were close to the actual values in the test set. The residuals were centered around zero with a few expected outliers, showing the model was reasonably accurate.
+
+Non-linear transformations
+
+```{r nonlinear}
+model_poly <- lm(CO2EMISSIONS ~ ENGINESIZE + I(ENGINESIZE^2) + CYLINDERS + FUELCONSUMPTION_COMB, data = train)
+summary(model_poly)
+```
+
+```{r model-log}
+model_log <- lm(CO2EMISSIONS ~ log(ENGINESIZE) + CYLINDERS + FUELCONSUMPTION_COMB, data = train)
+summary(model_log)
+```
+
+```{r model-interact}
+model_interact <- lm(CO2EMISSIONS ~ ENGINESIZE * CYLINDERS + FUELCONSUMPTION_COMB, data = train)
+summary(model_interact)
+```
+
+
+```{r anova}
+anova(model_multi,model_poly)
+```
+
+Qualitative Predictors
+
+```{r model-categorical}
+categoricals <- c("MAKE", "MODEL", "VEHICLECLASS", "TRANSMISSION", "FUELTYPE")
+train[categoricals] <- lapply(train[categoricals], as.factor)
+model_all_cat <- lm(CO2EMISSIONS ~ VEHICLECLASS + TRANSMISSION + FUELTYPE +
+                      ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB,
+                    data = train)
+
+summary(model_all_cat)
+```
+
+A multiple linear regression model was fitted using both numeric and categorical variables to predict CO₂ emissions. The model included engine size, number of cylinders, combined fuel consumption, vehicle class, transmission type, and fuel type. The model performed extremely well, explaining 99% of the variation in CO₂ emissions (R² = 0.9904). Combined fuel consumption was the strongest predictor, with higher fuel consumption leading to higher emissions. Some categorical variables such as certain transmission types and fuel types were also statistically significant. Vehicles using alternative fuel types (e.g., ethanol or electric) were associated with significantly lower CO₂ emissions. Overall, the model confirms that both vehicle characteristics and fuel types are important drivers of emissions.
+
+
+
+```{r predict-all-cat}
+# Generate predicted values
+test$predicted_CO2 <- predict(model_all_cat, newdata = test)
+# Calculate MAE and RMSE
+mae_all_cat <- mean(abs(test$CO2EMISSIONS - test$predicted_CO2))
+rmse_all_cat <- sqrt(mean((test$CO2EMISSIONS - test$predicted_CO2)^2))
+
+# Print the results
+mae_all_cat
+rmse_all_cat
+```
+
+These low values indicate that the model provides highly accurate predictions of CO₂ emissions. The performance reflects the strength of the model's structure, which includes key vehicle specifications and categorical attributes such as transmission type and fuel type.
+
+```{r plot-all-cat}
+ggplot(test, aes(x = CO2EMISSIONS, y = predicted_CO2)) +
+  geom_point(color = "steelblue", alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Actual vs Predicted CO2 Emissions",
+    x = "Actual CO2 Emissions (g/km)",
+    y = "Predicted CO2 Emissions (g/km)"
+  ) +
+  theme_minimal()
+```
+
+The above are comfirm visually ,we can observe a strong linear relationship between the actual and predicted CO₂ emissions on the test data. Most of the points lie very close to the red  line, which represents perfect predictions. This indicates that the model is making highly accurate predictions across a wide range of emission values. There are only a few minor deviations, suggesting excellent generalization and model fit.
+
+
+
+
+```{r model-categorical-no-outliers}
+categoricals <- c("MAKE", "MODEL", "VEHICLECLASS", "TRANSMISSION", "FUELTYPE")
+train_no_outliers[categoricals] <- lapply(train_no_outliers[categoricals], as.factor)
+model_all_cat_no_ouliers <- lm(CO2EMISSIONS ~ VEHICLECLASS + TRANSMISSION + FUELTYPE +
+                      ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB,
+                    data = train_no_outliers)
+
+summary(model_all_cat_no_ouliers)
+```
+
+
+```{r model-full-all}
+model_full_all<-lm(CO2EMISSIONS ~ ., data = train)
+summary(model_full_all)
+```
+
+Model with all exept model and make columns
+
+```{r model-clean}
+model_clean <- lm(CO2EMISSIONS ~ . - MODEL - MAKE -TransmissionGroup, data = train)
+summary(model_clean)
+```
+
+### Lasso Regression
+
+
+```{r lasso}
+
+x <- model.matrix(CO2EMISSIONS ~ ., data = train)[, -1]  # remove intercept
+y <- train$CO2EMISSIONS
+set.seed(123)  # for reproducibility
+
+
+lasso_cv <- cv.glmnet(x, y, alpha = 1)  # alpha = 1 → Lasso
+
+# Plot cross-validation curve
+plot(lasso_cv)
+
+```
+
+
+```{r reg-full}
+# Run regsubsets with up to 10 predictors (adjust as needed)
+regfit_small <- regsubsets(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB ,
+                           data = train, nvmax = 10)
+summary(regfit_small)
+
+
+```
+
+#### regit full
+
+
+regfit_full <- regsubsets(CO2EMISSIONS ~ ., data = train, nvmax = 8, really.big = TRUE)
+summary(regfit_full)
+NOT RUNNING (TOO BIG)
+
+
+
+
+```{r regit-small}
+regfit <- regsubsets(CO2EMISSIONS ~ ENGINESIZE + CYLINDERS + FUELCONSUMPTION_COMB + VEHICLECLASS + TRANSMISSION + FUELTYPE,data = train)
+summary(regfit)
+```
+
+```{r reg-names}
+names(regfit)
+```
+
+```{r reg-evaluate}
+# Extract summary of regsubsets object
+reg_summary <- summary(regfit)
+
+# Print values with labels
+cat("RSS for each model size:\n")
+print(reg_summary$rss)
+
+cat("\nAdjusted R-squared for each model size:\n")
+print(reg_summary$adjr2)
+
+cat("\nMallows' Cp for each model size:\n")
+print(reg_summary$cp)
+
+cat("\nBIC for each model size:\n")
+print(reg_summary$bic)
+
+# Best model sizes according to each metric
+cat("\nModel size with lowest RSS:", which.min(reg_summary$rss), "\n")
+cat("Model size with highest Adjusted R-squared:", which.max(reg_summary$adjr2), "\n")
+cat("Model size with lowest Mallows' Cp:", which.min(reg_summary$cp), "\n")
+cat("Model size with lowest BIC:", which.min(reg_summary$bic), "\n")
+
+```
+
+```{r plot-reg}
+# Assuming regfit_small was created earlier:
+reg_summary <- summary(regfit)
+
+# Set up 2x2 plotting area
+par(mfrow = c(2, 2))
+
+# 1. RSS plot
+plot(reg_summary$rss, type = "l", xlab = "Number of Variables", ylab = "RSS",
+     main = "Residual Sum of Squares (RSS)")
+points(which.min(reg_summary$rss), reg_summary$rss[which.min(reg_summary$rss)], col = "red", pch = 19)
+
+# 2. Adjusted R² plot
+plot(reg_summary$adjr2, type = "l", xlab = "Number of Variables", ylab = "Adjusted R²",
+     main = "Adjusted R²")
+points(which.max(reg_summary$adjr2), reg_summary$adjr2[which.max(reg_summary$adjr2)], col = "red", pch = 19)
+
+# 3. Cp plot
+plot(reg_summary$cp, type = "l", xlab = "Number of Variables", ylab = "Mallows' Cp",
+     main = "Mallows' Cp")
+points(which.min(reg_summary$cp), reg_summary$cp[which.min(reg_summary$cp)], col = "red", pch = 19)
+
+# 4. BIC plot
+plot(reg_summary$bic, type = "l", xlab = "Number of Variables", ylab = "BIC",
+     main = "Bayesian Information Criterion (BIC)")
+points(which.min(reg_summary$bic), reg_summary$bic[which.min(reg_summary$bic)], col = "red", pch = 19)
+```
+
+
+
+```{r reg-r2}
+plot(regfit, scale = "r2")
+```
+
+```{r reg-adj}
+plot(regfit, scale = "adjr2")
+```
+
+
+```{r reg-bic}
+plot(regfit, scale = "bic")
+```
+
+```{r reg-fwd}
+regfit.fwd <- regsubsets(CO2EMISSIONS ~ ., data = train,
+    method = "forward")
+summary(regfit.fwd)
+
+```
+
+We are  getting linear dependencies and a massive number of predictors (672) and having many dummy variables (likely from categorical features like MAKE, MODEL, TRANSMISSION, etc.). We will continue with numerical predictors only.
+
+
+
+
+```{r reg-num}
+library(leaps)
+
+# Step 1: Keep only numeric columns
+numeric<- train[, sapply(train, is.numeric)]
+
+# Step 2: Remove the response variable (if it's still there)
+x_numeric <- subset(numeric, select = -CO2EMISSIONS)
+
+# Step 3: Build the formula dynamically
+numeric_formula <- as.formula(paste("CO2EMISSIONS ~", paste(names(x_numeric), collapse = " + ")))
+
+# Step 4: Run regsubsets
+regfit_numeric <- regsubsets(numeric_formula, data = numeric, nvmax = 10)
+
+# Step 5: Summary and plot
+reg_summary <- summary(regfit_numeric)
+reg_summary
+
+```
+
+```{r reg_num-adj}
+plot(regfit_numeric , scale = "adjr2")
+```
+
+
+
+
+```{r reg-fwd}
+regfit.fwd_num <- regsubsets(CO2EMISSIONS ~ ., data = numeric,
+    method = "forward")
+summary(regfit.fwd_num)
+
+```
+
+
+
