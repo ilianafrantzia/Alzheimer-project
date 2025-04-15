@@ -7,19 +7,28 @@ output:
 date: "2025-04-01"
 ---
 
-### Dataset Overview
+## Dataset Overview
 
-The FuelConsumption.csv dataset contains information on 1,067 observations (vehicles from the model year 2014 only) and 13 columns (variables). Each row represents a different vehicle model and the variables describe both the technical specifications and environmental performance of the vehicles.
+The **FuelConsumption.csv** dataset contains information on 1,067 observations (vehicles from the model year 2014 only) and 13 columns (variables). Each row represents a different vehicle model and the variables describe both the technical specifications and environmental performance of the vehicles.
 
-The main variables include:
+The columns of the dataset are :
 
-ENGINE_SIZE – engine size in liters
-CYLINDERS – number of engine cylinders
-FUELCONSUMPTION_COMB – combined fuel consumption in L/100 km
-CO2EMISSIONS – carbon dioxide emissions in grams/km
-FUELTYPE and TRANSMISSION – fuel type and transmission category
+- **MODELYEAR** :	The year the vehicle model was manufactured.
+- **MAKE** :	The brand or manufacturer of the vehicle (e.g., Ford, BMW, Honda).
+- **MODEL**	The specific model name of the vehicle.
+- **VEHICLECLASS** :	Vehicle type  (e.g., SUV, Compact, Pickup truck).
+- **ENGINESIZE** :	The engine size in liters (L) ,where a higher value typically means a larger engine.
+- **CYLINDERS** :	The number of cylinders in the engine. More cylinders usually indicate higher power  and fuel consumption.
+- **TRANSMISSION** :	The type of gearbox (e.g., automatic, manual).
+- **FUELTYPE** :	The type of fuel the vehicle uses (e.g., gasoline, diesel, ethanol, natural gas).
+- **FUELCONSUMPTION_CITY** :	Fuel consumption in city driving conditions (liters per 100 kilometers).
+- **FUELCONSUMPTION_HWY** :	Fuel consumption on highways (liters per 100 kilometers).
+- **FUELCONSUMPTION_COMB** :	Combined fuel consumption (weighted average of city and highway) in liters per 100 kilometers.
+- **FUELCONSUMPTION_COMB_MPG** :	Combined fuel consumption in miles per gallon (MPG), this is the inverse of fuel consumption in L/100 km.
+- **CO2EMISSIONS** :	The amount of carbon dioxide (CO₂) emitted by the vehicle’s tailpipe, measured in grams per kilometer (g/km). This is the target variable.
 
-The main purpose of this project is to analyze how different vehicle features affect fuel consumption and CO₂ emissions. 
+
+The primary objective of this project is to perform a regression analysis to explore the relationship between vehicle characteristics and their corresponding CO₂ emissions. By building a predictive model, we aim to understand which vehicle specifications most strongly influence CO₂ emissions, helping to identify key contributors to automotive environmental impact.
 
 
 
@@ -28,6 +37,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ### Import Libraries
+
 ```{r libraries, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(dplyr)
@@ -49,6 +59,8 @@ Load the FuelConsumption dataset and preview the first 6 rows of the dataset.
 ```{r set_seed}
 set.seed(123)
 ```
+
+# Data Overview
 
 ```{r load-data}
 df<- read.csv("FuelConsumption.csv")
@@ -75,29 +87,25 @@ Statistical summary of numerical variables :
 summary(df)
 ```
 
-
-Maximum values of numerical columns
-  
-```{r maximum}
-sapply(df[sapply(df, is.numeric)], max, na.rm = TRUE)
-
-```
-
 - MODEL YEAR: All the observations in this column contain the year 2014 because every vehicle in the dataset was manufactured in 2014.We should remove this column for our dataset since it can’t help differentiate between outcomes.
-- ENGINE_SIZE: Ranges from 1.0 to 8.4 liters and the mean engine size is 3.35 L, suggesting that most      cars   have moderate engine sizes
+
+- ENGINE_SIZE: Ranges from 1.0 to 8.4 liters and the mean engine size is 3.35 L, suggesting that most cars   have moderate engine sizes
+
 - CYLINDERS: Ranges from 3 to 12 cylinders, with a median of 6 cylinders and the average number of  cylinders is around 5.8. In general,more cylinders imply more engine power and therefore more CO2Emissions.
+
 - FUELCONSUMPTION_CITY / HWY / COMB: Combined fuel consumption (L/100 km) ranges from 4.7 to 25.8 and the   mean combined fuel consumption is 11.58, indicating a mix of fuel-efficient and less efficient vehicles.We are also going to check if there is a relationship between CMB and CITY,HWY.
-- FUELCONSUMPTION_COMB_MPG: Ranges from 11 to 60 miles per gallon with median 26 MPG, meaning half the     cars get more than 26 MPG and half get less
-- CO2EMISSIONS: Ranges from 108 to 488 grams/km, with a mean of 256.2 ,suggesting a wide spread in         vehicle emissions, influenced by engine and fuel consumption differences
+
+- FUELCONSUMPTION_COMB_MPG: Ranges from 11 to 60 miles per gallon with median 26 MPG, meaning half the cars get more than 26 MPG and half get less.
+
+- CO2EMISSIONS: Ranges from 108 to 488 grams/km, with a mean of 256.2 ,suggesting a wide spread in vehicle emissions, influenced by engine and fuel consumption differences
+
+We also observed that the fuel consumption comb and the fuel consumption comb mpg possibly give us the same results but in different units so we will have to drop one of these columns to avoid multicollinearity and unnessary redundancy.
+
+Also , vehicles with larger engines and more cylinders tend to have higher fuel consumption and CO₂ emissions.
 
 
 
-From the summary table we can observe that vehicles with larger engines and more cylinders tend to have higher fuel consumption and CO₂ emissions.
-
-Also,there's a wide variety of fuel efficiency, from very eco-friendly models to high-emission vehicles.
-
-
-```{r}
+```{r which}
 # Model with the highest CO2 emissions
 df$MODEL[which.max(df$CO2EMISSIONS)]
 
@@ -112,7 +120,7 @@ The vehicle model with the highest CO₂ emissions is the E350 WAGON, emitting _
 
 
 
-Count the number missing values per column
+Count the number **missing values** per column
 
 ```{r colsum}
 
@@ -134,6 +142,7 @@ sum(duplicated(df))
 There are no duplicated rows in the dataset.
 
 Check unique values for categorical columns
+
 ```{r unique}
 
 cat_cols <- names(df)[sapply(regression, is.character)]
@@ -147,11 +156,111 @@ The dataset contains a rich variety of categorical features, including 39 car ma
 
 All categorical columns are free of spelling errors, case inconsistencies, or data entry mistakes.
 
-
+## Drop unessesary columns like Model year
 
 ```{r drop-MODELYEAR}
-df <- df[, !names(df) %in% "MODELYEAR"]
+df <- df[, !(names(df) %in% "MODELYEAR")]
 head(df)
+```
+
+## Difference between fuel consumption comb and mpg 
+
+```{r mpg diff}
+
+# 1. MPG Difference Check 
+calculated_mpg <- 235.214583 / regression$FUELCONSUMPTION_COMB
+mpg_diff <- regression$FUELCONSUMPTION_COMB_MPG - calculated_mpg
+
+# Threshold for the top 5% largest differences
+percentile_95 <- quantile(mpg_diff, 0.95)
+print(percentile_95)
+
+# Count how many exceed it
+sum(mpg_diff > percentile_95)  # Still gives 52
+
+```
+
+We checked the difference between fuel consumption comb and mpg and we observed that these two variables express the same concept, fuel efficiency ,but in inverse units and the formula of the mpg calculation is :
+
+MPG =235.214583 / (L/100km)
+
+There are 52 outliers that have difference in calculations.
+
+We will also remove FUELCONSUMPTION_COMB_MPG  from the dataset prior to analysis because it is mathematically derived from FUELCONSUMPTION_COMB using the above formula. Including both variables would introduce multicollinearity and redundancy in our regression model. 
+
+## Drop the fuel consumption comb mpg column
+
+```{r drop-MODELYEAR}
+df <- df[, !(names(df) %in% "FUELCONSUMPTION_COMB_MPG")]
+names(df)
+```
+
+# Fuel Consumption Check (Simple and Weighted Average)
+```{r fuel-average}
+# Simple average
+simple_avg <- (df$FUELCONSUMPTION_CITY + df$FUELCONSUMPTION_HWY) / 2
+# Weighted average
+weighted_avg <- 0.55 * df$FUELCONSUMPTION_CITY + 0.45 * df$FUELCONSUMPTION_HWY
+
+# Compare to actual
+diff_simple <- abs(df$FUELCONSUMPTION_COMB - simple_avg)
+diff_weighted <- abs(df$FUELCONSUMPTION_COMB - weighted_avg)
+
+# Mean differences
+mean(diff_simple)
+mean(diff_weighted)
+
+```
+
+We first perform some tests to see which formula is used for the calculation of the average of fuel consumption in city and in highway.The two possible averages is the simple average and the 55/45 weighted average.By looking at the mean above, we can see that the formula with the lower mean difference is the one likely used to compute. 
+So the formula used is:
+     COMB = 0.55 x CITY + 0.45 x HWY
+
+So there is a clearly linear realtionship between fuel comsumption combined with city and highway.
+The next step is to set a threshold:
+A proper threshold could be around 0.1 since the mean difference is close to 0.02510778
+
+
+```{r relation-comb-city}
+
+# Scatterplot: City vs Combined Fuel Consumption
+ggplot(df, aes(x = FUELCONSUMPTION_CITY, y = FUELCONSUMPTION_COMB)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(
+    title = "Linear Relationship Between City and Combined Fuel Consumption",
+    x = "City Fuel Consumption (L/100 km)",
+    y = "Combined Fuel Consumption (L/100 km)"
+  )
+```
+```{r}
+# Correlation
+cor(df$FUELCONSUMPTION_CITY, df$FUELCONSUMPTION_COMB)
+
+# Fit a linear model
+lm_comb_city <- lm(FUELCONSUMPTION_COMB ~ FUELCONSUMPTION_CITY, data = df)
+summary(lm_comb_city)
+
+```
+
+```{r}
+# Scatterplot with linear regression line
+ggplot(df, aes(x = FUELCONSUMPTION_CITY, y = FUELCONSUMPTION_HWY)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = TRUE, color = "blue") +
+  labs(
+    title = "Linear Relationship Between City and Highway Fuel Consumption",
+    x = "City Fuel Consumption (L/100 km)",
+    y = "Highway Fuel Consumption (L/100 km)"
+  )
+
+# Correlation
+cor(df$FUELCONSUMPTION_CITY, df$FUELCONSUMPTION_HWY)
+
+# Linear model
+model_fc <- lm(FUELCONSUMPTION_HWY ~ FUELCONSUMPTION_CITY, data = df)
+summary(model_fc)
+
 ```
 
 
@@ -468,43 +577,9 @@ The bar chart shows the distribution of transmission types in the dataset, repre
 
 
 
-```{r mpg diff}
-
-# 1. MPG Difference Check 
-calculated_mpg <- 235.214583 / regression$FUELCONSUMPTION_COMB
-mpg_diff <- regression$FUELCONSUMPTION_COMB_MPG - calculated_mpg
-
-# Threshold for the top 5% largest differences
-percentile_95 <- quantile(mpg_diff, 0.95)
-print(percentile_95)
-
-# Count how many exceed it
-sum(mpg_diff > percentile_95)  # Still gives 52
 
 
-# 2. Fuel Consumption Check (Simple and Weighted Average)
 
-# Simple average
-simple_avg <- (df$FUELCONSUMPTION_CITY + df$FUELCONSUMPTION_HWY) / 2
-# Weighted average
-weighted_avg <- 0.55 * df$FUELCONSUMPTION_CITY + 0.45 * df$FUELCONSUMPTION_HWY
-
-# Compare to actual
-diff_simple <- abs(df$FUELCONSUMPTION_COMB - simple_avg)
-diff_weighted <- abs(df$FUELCONSUMPTION_COMB - weighted_avg)
-
-# Mean differences
-mean(diff_simple)
-mean(diff_weighted)
-
-```
-
-We first perform some tests to see which formula is used for the calculation of the average of fuel consumption in city and in highway.The two possible averages is the simple average and the 55/45 weighted average.By looking at the mean above, we can see that the formula with the lower mean difference is the one likely used to compute. 
-So the formula used is:
-     COMB = 0.55 x CITY + 0.45 x HWY
-
-The next step is to set a threshold:
-A proper threshold could be around 0.1 since the mean difference is close to 0.02510778
 
 We can also check by using the IQR method:
 ```{r IQR method for threshold}
