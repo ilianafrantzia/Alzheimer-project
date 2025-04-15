@@ -113,7 +113,7 @@ df$MODEL[which.max(df$CO2EMISSIONS)]
 df$MODEL[which.min(df$CO2EMISSIONS)]
 ```
 
-The vehicle model with the highest CO₂ emissions is the E350 WAGON, emitting ___ g/km, while the model with the lowest CO₂ emissions is the ____, emitting only ___ g/km.
+The vehicle model with the highest CO₂ emissions is the E350 WAGON, emitting 488 g/km, while the model with the lowest CO₂ emissions is the PRIUS c, emitting only 100 g/km.
 
 
 
@@ -145,7 +145,7 @@ Check unique values for categorical columns
 
 ```{r unique}
 
-cat_cols <- names(df)[sapply(regression, is.character)]
+cat_cols <- names(df)[sapply(df, is.character)]
 
 unique_values <- lapply(df[cat_cols], unique)
 unique_values
@@ -168,8 +168,8 @@ head(df)
 ```{r mpg diff}
 
 # 1. MPG Difference Check 
-calculated_mpg <- 235.214583 / regression$FUELCONSUMPTION_COMB
-mpg_diff <- regression$FUELCONSUMPTION_COMB_MPG - calculated_mpg
+calculated_mpg <- 235.214583 / df$FUELCONSUMPTION_COMB
+mpg_diff <- df$FUELCONSUMPTION_COMB_MPG - calculated_mpg
 
 # Threshold for the top 5% largest differences
 percentile_95 <- quantile(mpg_diff, 0.95)
@@ -220,7 +220,7 @@ So there is a clearly linear realtionship between fuel comsumption combined with
 The next step is to set a threshold:
 A proper threshold could be around 0.1 since the mean difference is close to 0.02510778
 
-
+#delete
 ```{r relation-comb-city}
 
 # Scatterplot: City vs Combined Fuel Consumption
@@ -270,25 +270,34 @@ summary(model_fc)
 
 Histogram and boxplot of Engine Size distribution
 
-```{r plots-engine}
-par(mfrow = c(1, 2))
+```{r histogram-engine}
+
 hist(df$ENGINESIZE,
      main = "Distribution of Engine Size",
      xlab = "Engine Size",
      col = "steelblue",
      border = "black")
 
+```
+
+```{r boxplot-engine}
 boxplot(df$ENGINESIZE, 
         main = "ENGINE SIZE",
         ylab = "ENGINE SIZE",
         col = "lightblue")
-
-
-
 ```
 
 
-Most vehicles have engine sizes between 2.0 and 4.0 liters, with notable peaks around 2.0L and 3.5L. The distribution is right-skewed, meaning that while smaller engines are very common, a smaller number of vehicles have larger engines (above 5.0L). This suggests that most vehicles in the dataset are built with fuel efficiency in mind, while larger engines are limited to performance.
+Most vehicles have engine sizes between 2.0 and 4.0 liters, with notable peaks around 2.0L and 3.5L. The distribution is probably right-skewed  , meaning that while smaller engines are very common, a smaller number of vehicles have larger engines (above 5.0L). This suggests that most vehicles in the dataset are built with fuel efficiency in mind, while larger engines are limited to performance.
+
+Also, from the box-plot as we can observe  we have one outlier but when we check it with below calculation we can see that there are 2 outliers at the same value. 
+
+```{r check-the-number-of-outlier}
+bp_stats_engine <- boxplot.stats(df$ENGINESIZE)
+engine_outliers <- bp_stats_engine$out
+num_engine_outliers <- length(engine_outliers)
+print(num_engine_outliers)
+```
 
 ```{r skew-engine}
 skewness(df$ENGINESIZE)
@@ -332,7 +341,7 @@ ggplot(df, aes(x = FUELCONSUMPTION_CITY)) +
   labs(title = "Fuel Consumption (City)", x = "Fuel Consumption City", y = "Count")
 ```
 
-The histogram shows the distribution of fuel consumption in city driving conditions, measured in liters per 100 kilometers (L/100 km). Most vehicles consume between 8 and 15 L/100 km, with a clear peak around 11–13 L/100 km, suggesting that this is the typical range for city fuel efficiency in 2014 vehicles.
+The histogram shows the distribution of fuel consumption in city driving conditions, measured in liters per 100 kilometers (L/100 km). Most vehicles consume between 8 and 15 L/100 km, with a clear peak around 9–13 L/100 km, suggesting that this is the typical range for city fuel consumption in 2014 vehicles.
 The distribution is right-skewed, showing that while most cars are moderately fuel-efficient in the city, there are several vehicles with much higher consumption, reaching up to 30 L/100 km. These higher values likely correspond to larger, heavier or performance vehicles.
 
 ```{r fuelconsCITY-boxplot}
@@ -349,7 +358,7 @@ skewness(df$FUELCONSUMPTION_CITY)
 ```
 
 ```{r skew-no-outliers-city}
-skewness(regression_no_outliers$FUELCONSUMPTION_CITY)
+skewness(df_no_outliers$FUELCONSUMPTION_CITY)
 ```
 
 As we can observe the skewness after removing outliers decreased to 0.52.
@@ -381,7 +390,7 @@ ggplot(df, aes(x = FUELCONSUMPTION_COMB)) +
   labs(title = "Fuel Consumption (Combined)", x = "Fuel Consumption Comb", y = "Count")
 ```
 
-This histogram shows the distribution of combined fuel consumption, which averages city and highway fuel use, measured in liters per 100 kilometers (L/100 km). The majority of vehicles fall between 8 and 14 L/100 km, with a peak around 10 to 11 L/100 km, indicating that most cars in the dataset are moderately fuel-efficient under average driving conditions.As from  previous, the distribution is right-skewed, meaning a small number of vehicles consume significantly more fuel,up to over 25 L/100 km. These high-consumption outliers likely represent large SUVs, trucks or performance vehicles.
+This histogram shows the distribution of combined fuel consumption, which averages city and highway fuel use, measured in liters per 100 kilometers (L/100 km). The majority of vehicles fall between 8 and 13 L/100 km, with a peak around 9 to 11 L/100 km, indicating that most cars in the dataset are moderately fuel-efficient under average driving conditions.As from  previous, the distribution is right-skewed, meaning a small number of vehicles consume significantly more fuel,up to over 25 L/100 km. These high-consumption outliers likely represent large SUVs, trucks or performance vehicles.
 
 
 
@@ -397,37 +406,12 @@ boxplot(df$FUELCONSUMPTION_COMB,
 
 
 
-
-
-Histogram of Fuel Consumption MPG distribution
-
-```{r hist-fuel-mpg}
-ggplot(df, aes(x = FUELCONSUMPTION_COMB_MPG)) +
-  geom_histogram(bins = 30, fill = "steelblue", color = "black") +
-  labs(title = "Fuel Consumption (MPG)", x = "Fuel Consumption Comb MPG", y = "Count")
-```
-
-This histogram displays the combined fuel consumption in miles per gallon (MPG), which is a commonly used measure of vehicle fuel efficiency. Higher MPG values indicate better fuel economy. Most vehicles in the dataset fall between 15 and 35 MPG, with a peak around 25 to 30 MPG.The distribution is left-skewed, since a higher MPG is better and fewer vehicles reach the high-efficiency range above 40 MPG. 
-
-
-Boxplot of fuel consumption combined mpg:
-
-```{r fuelconsHWY-boxplot}
-boxplot(df$FUELCONSUMPTION_COMB_MPG, 
-        main = "FUEL CONSUMPTION COMBINED MPG",
-        ylab = "comb mpg",
-        col = "lightblue")
-
-```
-
-
-
 Histogram of CO2 Emissions distribution
  
 ```{r hist-co2}
 ggplot(df, aes(x = CO2EMISSIONS)) +
   geom_histogram(bins = 30, fill = "steelblue", color = "black") +
-  labs(title = "Distribution of CO2 Emissions", x = "CO2 Emissions", y = "Count")
+  labs(title = "Distribution of CO2 Emissions", x = "CO2 Emissions (g/km)", y = "Count")
 ```
 
 The histogram illustrates the distribution of CO₂ emissions (in grams per kilometer) for cars. Most cars emit between 180 and 300 g/km, with the highest concentration around 200–250 g/km, which likely represents average passenger vehicles.
@@ -441,7 +425,7 @@ skewness(df$CO2EMISSIONS)
 
 ```
 
-As we can observe the skewness is >0.5 comfirming that the distribution is slightly right skewed.
+As we can observe the skewness is really close to 0.5 comfirming that the distribution is slightly right skewed.
 
 ```{r boxplot co2}
 boxplot(df$CO2EMISSIONS, 
@@ -452,6 +436,13 @@ boxplot(df$CO2EMISSIONS,
 
 ```
 
+From the box-plot above we can observe that we have 6 outliers.
+
+
+
+
+
+#delete 
 CO2EMISSIONS: Most values are concentrated between 150 and 300 g/km, with a gradual decline toward higher emissions. This suggests that have a slightly skewed distribution.
 
 CYLINDERS: The distribution is clearly categorical, with strong peaks at 4, 6, and 8 cylinders—indicating these are the dominant engine types in the dataset.
@@ -463,6 +454,8 @@ FUELCONSUMPTION_COMB: The majority of vehicles consume around 8 to 12 liters per
 
 
 We are going to create a new dataframe without outliers just so we can compare the models on the two dataframes.
+
+#upstair
 
 ```{r create-new-dataframe-no-outliers}
 # Step 1: Select only numeric columns
@@ -485,8 +478,17 @@ remove_outliers <- function(df) {
 }
 
 # Step 3: Apply the function to your dataset
-regression_no_outliers <- remove_outliers(df)
+df_no_outliers <- remove_outliers(df)
 ```
+
+
+```{r skew-co2 new}
+skewness(df_no_outliers$CO2EMISSIONS)
+
+```
+
+After romoving these outliers the skewness fall to 0,4484 which is close to have a symetric distribution.
+
 
 ## Categorical columns plots 
 
@@ -503,7 +505,7 @@ df %>%
 ```
 
 
-From the plot, we observe that the most common car makes in the dataset are Ford, Chevrolet, BMW, Mercedes-Benz and Toyota.On the other end, premium and niche brands like Rolls-Royce, Aston Martin and Lamborghini appear far less frequently, likely due to their lower production volumes.
+From the plot, we observe that the most common car makes in the dataset are Ford, Chevrolet, BMW, Mercedes-Benz.On the other end, premium and niche brands like Rolls-Royce, Aston Martin and Lamborghini appear far less frequently, likely due to their lower production volumes.
 
 
 
@@ -520,7 +522,9 @@ df %>%
   labs(title = "Top 10 Car Models", x = "Model", y = "Count")
 ```
 
-The bar chart above displays the top 10 most frequently occurring car models in the dataset. The most common models are:F150 FFV 4X4,F150 FFV,FOCUS FFV,BEETLE,ACCORD.These models appear between 5 and 8 times each in the dataset.Notably, Ford has multiple variants of the F150 among the most frequent models, reflecting its strong market presence and product variety in 2014.
+We have over 600 car models so its impossible to display them all
+
+The bar chart above displays the top 10 most frequently occurring car models in the dataset. The most common models are:F150 FFV 4X4,F150 FFV.These models appear between 5  times each in the dataset.Notably, Ford has multiple variants of the F150 among the most frequent models, reflecting its strong market presence and product variety in 2014.
 
 
 Barplot of class distribution: 
@@ -541,7 +545,7 @@ ggplot(df, aes(x = fct_rev(fct_infreq(VEHICLECLASS)), fill = VEHICLECLASS)) +
 
 
 
-The bar chart above presents the distribution of vehicle classes within the dataset. The most common classes are mid-size, compact, small SUVs and standard SUVs, followed by full-size vehicles. Smaller segments of the dataset include two-seaters, subcompacts and pickup trucks, as well as a variety of less common vehicle types such as minivans,vans, station wagons and special purpose vehicles.
+The bar chart above presents the distribution of vehicle classes within the dataset. The most common classes are mid-size, compact, small and standard , followed by  vehicles. Smaller segments of the dataset include two-seaters, subcompacts and pickup trucks, as well as a variety of less common vehicle types such as minivans,vans, station wagons and special purpose vehicles.
 
 
 Barplot of fuel type distribution:
@@ -555,13 +559,13 @@ ggplot(df, aes(x = FUELTYPE, fill = FUELTYPE)) +
   theme(legend.position = "none")
 ```
 
-The fuel type distribution chart reveals that the majority of vehicles in the dataset run on regular gasoline (X), followed closely by those using premium gasoline (Z). In contrast, vehicles that use ethanol (E85) and diesel (D) are significantly less common. This suggests that the dataset is heavily weighted toward traditional gasoline-powered vehicles, which reflects market trends in 2014.It is important to consider this imbalance when analyzing fuel consumption and CO₂ emissions, as different fuel types have distinct environmental and performance characteristics.
+The fuel type distribution chart reveals that the majority of vehicles in the dataset run on regular gasoline (X), followed closely by those using premium gasoline (Z). In contrast, vehicles that use ethanol (E85) and diesel (D) are significantly less common. This suggests that the dataset is heavily weighted towards traditional gasoline-powered vehicles, which reflects market trends in 2014.It is important to consider this imbalance when analyzing fuel consumption and CO2 emissions, as different fuel types have distinct environmental and performance characteristics.
 
 
 
 
 
-```{r bar-transmission}
+```{r bar-plot of transmission distribution}
 ggplot(df, aes(x = fct_rev(fct_infreq(TRANSMISSION)), fill = VEHICLECLASS)) +
   geom_bar(fill = "skyblue") +
   theme_minimal() +
