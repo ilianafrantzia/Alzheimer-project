@@ -1,8 +1,8 @@
 ---
 title: "DSC 532- Alzheimers classification project"
 output:
-  html_document: default
   pdf_document: default
+  html_document: default
 date: "2025-03-31"
 ---
 
@@ -13,8 +13,11 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
+!!!!
+We might need to scale for kNN or other methods (LDA,...)
+
 ### Import Libraries
-```{r libraries, message=FALSE, warning=FALSE}
+```{r libraries,echo=FALSE, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(dplyr)
 library(ggplot2)
@@ -41,6 +44,9 @@ Checking the data types and structure of the dataset.
 ```{r}
 str(data)
 ```
+
+As observed above, most of our categorical features are of type 'character', so we will convert them to factors.
+
 Statistical summary of numerical variables.
 ```{r}
 summary(data)
@@ -80,12 +86,13 @@ unique_values
 
 
 ```
-Checking the values of each categorical column and that there are no any data entry errors or misspelling.
+WE checked the values of all the categorical columns to ensure that there are not any data entry errors or misspelling.
 
-```{r}
-unique_values <- lapply(data, unique)
-unique_values
+```{r turn to factor}
+data <- data %>%
+  mutate(across(where(is.character), as.factor))
 ```
+
 ### Visualize numerical columns
 
 ```{r hist-age}
@@ -281,7 +288,7 @@ ggplot(data, aes(x = Genetic.Risk.Factor..APOE.ε4.allele.)) +
   theme_minimal()
 ```
 
-The genetic risk distribution is unbalanced where most people have no geenetic risk factor APOE-ε4 Allele.
+The genetic risk distribution is unbalanced where most people have no genetic risk factor APOE-ε4 Allele.
 
 ```{r bar-income}
 ggplot(data, aes(x = Income.Level)) +
@@ -350,10 +357,179 @@ round(prop.table(table(data$Alzheimer.s.Diagnosis)) * 100, 2)
 ```
 The distribution of Alzheimer’s diagnosis shows that approximately 58% of individuals are not diagnosed with the disease, while 42% are. 
 
+
+Since we have a mid balanced dataset, we will try to balance it by resampling. We will then compare the results from the original dataset and the resampled dataset to see which one performs better.
+
+```{r split}
+
+# Ensure target is a factor
+data$Alzheimer.s.Diagnosis <- as.factor(data$Alzheimer.s.Diagnosis)
+
+# Create an 80-20 train-test split
+set.seed(1)
+train_index <- createDataPartition(data$Alzheimer.s.Diagnosis, p = 0.8, list = FALSE)
+
+train_data <- data[train_index, ]
+test_data <- data[-train_index, ]
+
+# Separate predictors and response
+X_train <- train_data[, -which(names(train_data) == "Alzheimer.s.Diagnosis")]
+y_train <- train_data$Alzheimer.s.Diagnosis
+
+# Apply upsampling
+upsampled_train <- upSample(x = X_train, y = y_train, yname = "Alzheimer.s.Diagnosis")
+
+#Model on original
+model_orig <- train(Alzheimer.s.Diagnosis ~ ., data = train_data, method = "glm", family = "binomial")
+
+#Model on resampled
+model_up <- train(Alzheimer.s.Diagnosis ~ ., data = upsampled_train, method = "glm", family = "binomial")
+
+# Predictions
+pred_orig <- predict(model_orig, test_data)
+pred_up <- predict(model_up, test_data)
+
+# Confusion Matrices
+confusionMatrix(pred_orig, test_data$Alzheimer.s.Diagnosis)
+confusionMatrix(pred_up, test_data$Alzheimer.s.Diagnosis)
+
+```
+
+Recall / Sensitivity	✅ Critical — You want to catch as many actual cases as possible (minimize FN).
+
+In Alzheimer’s prediction, a false negative (saying someone doesn’t have Alzheimer’s when they do) can delay treatment and support. So:
+- You prefer false positives (extra caution) over false negatives (missed diagnosis).
+- Therefore, your original model may be better aligned with your goal, despite the class imbalance, because it has higher sensitivity.
+
+
+What You Can Do Next:
+1. Try other models like Random Forest or SVM with class weights or upsampling, and compare their sensitivity.
+2. Consider a custom threshold to favor recall (e.g., adjust cutoff from 0.5 to 0.4 if using predicted probabilities).
+3. Evaluate models using ROC curves and precision-recall curves.
+
+
+### Boxplots for Numerical Features vs Target
+
+```{r boxplots for numeric with target}
+
+numeric_vars <- names(data)[sapply(data, is.numeric)]
+
+for (var in numeric_vars) {
+  print(
+    ggplot(data, aes_string(x = "Alzheimer.s.Diagnosis", y = var, fill = "Alzheimer.s.Diagnosis")) +
+      geom_boxplot() +
+      labs(title = paste("Boxplot of", var, "by Alzheimer Diagnosis"), x = "Diagnosis.s.Diagnosis", y = var) +
+      theme_minimal()
+  )
+}
+
+```
+
+### Stacked Bar Plots for Categorical Features
+
+```{r barplots for categorical features with target}
+
+cat_vars <- names(data)[sapply(data, is.factor)]
+
+for (var in cat_vars) {
+  print(
+    ggplot(data, aes_string(x = var, fill = "Alzheimer.s.Diagnosis")) +
+      geom_bar(position = "fill") +
+      labs(title = paste("Proportion of Alzheimer Diagnosis by", var), y = "Proportion") +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  )
+}
+
+
+```
+
+### Correlation plot for numerical features
+
+```{r corr plot}
+
+numeric_data <- data[, sapply(data, is.numeric)]
+# Compute the correlation matrix
+cor_matrix <- cor(numeric_data, use = "complete.obs")
+
+# Plot it using corrplot
+corrplot(cor_matrix,
+         method = "color",       # Use colored squares
+         type = "upper",         # Show only upper triangle
+         order = "hclust",       # Cluster similar variables
+         tl.cex = 0.8,           # Text label size
+         number.cex = 0.7,       # Correlation number size
+         addCoef.col = "black",  # Add correlation values
+         diag = FALSE)           # Don’t show diagonal
+
+```
+
+So the correlation plot tells us that there is not relationship between the numeric variables.
+
+```{r corr plot 2}
+
+# Convert the target to numeric: 1 for "Yes", 0 for "No"
+data$Alz_numeric <- ifelse(data$Alzheimer.s.Diagnosis == "Yes", 1, 0)
+
+numeric_vars <- names(data)[sapply(data, is.numeric)]
+# Exclude the binary version of the target
+numeric_vars <- setdiff(numeric_vars, "Alz_numeric")
+
+# Calculate correlation with Alz_numeric
+pb_cor <- sapply(data[, numeric_vars], function(x) cor(x, data$Alz_numeric, method = "pearson", use = "complete.obs"))
+
+# Convert to data frame
+pb_df <- data.frame(Feature = names(pb_cor), PointBiserial_Correlation = pb_cor)
+pb_df <- pb_df[order(abs(pb_df$PointBiserial_Correlation), decreasing = TRUE), ]  # Sort by strength
+
+pb_df
+
+
+```
+
+To explore the relationship between numerical features and Alzheimer diagnosis, point-biserial correlations were calculated. Among all numeric variables, Age showed the strongest association with Alzheimer’s, with a moderate positive correlation of 0.42. This indicates that older individuals in the dataset are more likely to be diagnosed with Alzheimer’s — a finding that aligns well with real-world medical understanding. In contrast, Education Level, BMI, and Cognitive Test Score exhibited near-zero correlations, suggesting little to no linear relationship with the diagnosis in this dataset. While these variables may not show a strong direct correlation, they could still contribute to predictive performance in models that can capture nonlinear or interaction effects, such as decision trees or random forests. Therefore, these variables will be retained for modeling despite their low individual correlation.
+
+
+### Scale dataset for modeling
+
+We will scale the numeric variables in our dataset only when needed for specific models like Logistic Regression, k-Nearest Neighbors, SVM or LDA / QDA. Models like Decision Trees, Random Forest or Naive Bayes do not need scaling.
+
+```{r scale}
+
+# Identify numeric columns (excluding the target and any other non-predictors)
+numeric_vars <- names(data)[sapply(data, is.numeric)]
+numeric_vars <- setdiff(numeric_vars, "Alz_numeric")  # If you created this earlier
+
+# Extract the numeric data
+data_numeric <- data[, numeric_vars]
+
+# Create scaling object
+scaling_model <- preProcess(data_numeric, method = c("center", "scale"))
+
+# Apply scaling
+scaled_numeric <- predict(scaling_model, data_numeric)
+
+# Keep categorical columns and target
+non_numeric <- data[, !(names(data) %in% numeric_vars)]
+
+# Combine scaled numeric with original non-numeric
+data_scaled <- cbind(scaled_numeric, non_numeric)
+
+summary(data_scaled[, numeric_vars])  # Mean should be ~0, SD ~1
+sapply(data_scaled[, numeric_vars], sd)
+
+```
+
+From the results above, we confirm that the scaling was done correctly since the mean is 0 and the sd is equal to 1.
+
+
+
+
+
 ELENI------
 
 ```{r predictions}
-glm.fit <- glm(Alzheimer.s.Diagnosis ~ ., data = data, family = binomial)
+glm.fit <- glm(Alzheimer.s.Diagnosis ~ ., data = train_data, family = binomial)
 summary(glm.fit)
 
 
@@ -429,4 +605,3 @@ Urban vs Rural Living	          1.000	            Practically perfect
 What do the above mean?
 No multicollinearity at all in your final model.
 This confirms that your predictors are statistically independent enough to trust the regression coefficients and p-values. We're good to go on interpretation, prediction, and evaluation.
-
