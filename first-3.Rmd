@@ -1,0 +1,432 @@
+---
+title: "DSC 532- Alzheimers classification project"
+output:
+  html_document: default
+  pdf_document: default
+date: "2025-03-31"
+---
+
+This project uses the Alzheimer's Prediction Dataset, which includes health and demographic information from over 74,000 people across 20 different countries. The goal is to explore what factors might be linked to Alzheimer's disease and to build models that can help predict whether someone is likely to develop it.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+### Import Libraries
+```{r libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(moments)
+library(nortest)
+library(corrplot)
+library(caret)
+library(tidyr)
+
+```
+
+Load the alzheimers_prediction_dataset and preview the first 6 rows of the dataset.
+
+```{r load-data, message=FALSE}
+data <- read.csv("alzheimers_prediction_dataset.csv")
+head(data)
+```
+The dataset includes features like: 
+```{r}
+colnames(data)
+``` 
+
+Checking the data types and structure of the dataset.
+```{r}
+str(data)
+```
+Statistical summary of numerical variables.
+```{r}
+summary(data)
+```
+- The age range is between 50 to 94 and the average age is 72.
+- Education level is between 0 to 19 ,could represent years or level of education,where the average is around 9.
+- BMI range between 18.5–35 and the average is 26.78.
+- Cognitive test score is between 30 to 99 with average around 65.
+All observations are logical and there are no data entry.
+We will continue by checking if there are any missing or duplicated values.
+
+```{r}
+# Total number of missing values in the dataset
+sum(is.na(data))
+
+```
+We do not have any missing values.
+
+```{r}
+
+# Number of duplicated rows
+sum(duplicated(data))
+
+```
+We do not have any duplicates.
+
+```{r}
+
+# Check unique values for categorical columns
+cat_cols <- names(data)[sapply(data, is.character)]
+
+# Apply unique() to each categorical column and name the output
+unique_values <- lapply(data[cat_cols], unique)
+
+# Display the unique values nicely
+unique_values
+
+
+```
+Checking the values of each categorical column and that there are no any data entry errors or misspelling.
+
+```{r}
+unique_values <- lapply(data, unique)
+unique_values
+```
+### Visualize numerical columns
+
+```{r hist-age}
+ggplot(data, aes(x = Age)) +
+  geom_histogram(binwidth=1,fill = "lightblue", color = "black") +
+  labs(title = "Histogram of Age", x = "Age", y = "Count") +
+  theme_minimal()
+```
+We observed that the age distribution is balanced.
+
+The 10 most common ages of our datasets are:
+```{r age-counts}
+age_counts<-table(data$Age)
+# Sort in descending order
+sorted_age_counts <- sort(age_counts, decreasing = TRUE)
+
+# Show top results
+head(sorted_age_counts, 10)
+
+# Sort in ascending order
+asorted_age_counts <- sort(age_counts)
+
+# Show top results
+head(asorted_age_counts, 10)
+
+```
+Most people are 72 years old and the least are 68 years old.
+
+
+```{r hist-bmi}
+ggplot(data, aes(x = BMI)) +
+  geom_histogram(binwidth=1,fill = "lightblue", color = "black") +
+  labs(title = "Histogram of BMI", x = "BMI", y = "Count") +
+  theme_minimal()
+```
+
+Also, the BMI distribution is balanced.
+
+```{r hist-education}
+ggplot(data, aes(x = Education.Level)) +
+  geom_histogram(binwidth=1,fill = "lightblue", color = "black") +
+  labs(title = "Histogram of Education Level", x = "Years of Education", y = "Count") +
+  theme_minimal()
+```
+
+The education level distribution is also balanced.
+
+```{r hist-cognitive-score}
+ggplot(data, aes(x = Cognitive.Test.Score)) +
+  geom_histogram(binwidth=1,fill = "lightblue", color = "black") +
+  labs(title = "Histogram of Cognitive Test Score", x = "Score", y = "Count") +
+  theme_minimal()
+```
+
+The distribution of cognitive test score is balanced.
+
+
+### Visualize categorical columns
+
+```{r bar-gender}
+ggplot(data, aes(x = Gender)) +
+  geom_bar(binwidth=1,fill = "lightblue") +
+  labs(title = "Distribution of Gender", x = "Gender", y = "Count") +
+  theme_minimal()
+```
+
+The gender distribution is balanced,equal number of female and male.
+
+
+```{r bar-smoking}
+ggplot(data, aes(x = Smoking.Status)) +
+  geom_bar(binwidth=1,fill = "lightblue") +
+  labs(title = "Smoking Status Distribution", x = "Smoking Status", y = "Count") +
+  theme_minimal()
+```
+
+The smoking status distribution is also balanced.
+
+```{r bar-family-history}
+ggplot(data, aes(x = Family.History.of.Alzheimer.s)) +
+  geom_bar(binwidth=1,fill = "lightblue") +
+  labs(title = "Family History of Alzheimer's", x = "Family History", y = "Count") +
+  theme_minimal()
+```
+
+The family history of Alzheimer's distribution is unbalanced,most people do not have family history of Alzheimer's.
+
+```{r bar-activity}
+ggplot(data, aes(x = Physical.Activity.Level)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Physical Activity Level", x = "Activity Level", y = "Count") +
+  theme_minimal()
+```
+
+The plysical activity distribution is balanced.
+
+```{r bar-alcohol}
+ggplot(data, aes(x = Alcohol.Consumption)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Alcohol Consumption", x = "Alcohol Use", y = "Count") +
+  theme_minimal()
+```
+
+The alcohol consumption distribution is balanced.
+
+```{r bar-diabetes}
+ggplot(data, aes(x = Diabetes)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Diabetes Status", x = "Diabetes", y = "Count") +
+  theme_minimal()
+```
+
+The diabetes distribution is unbalanced ,where most people do not have diabetes.
+
+```{r bar-hypertension}
+ggplot(data, aes(x = Hypertension)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Hypertension Status", x = "Hypertension", y = "Count") +
+  theme_minimal()
+```
+
+The hypertension distribution is unbalanced,most patients do not have hypertension.
+
+```{r bar-cholesterol}
+ggplot(data, aes(x = Cholesterol.Level)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Cholesterol Level", x = "Cholesterol", y = "Count") +
+  theme_minimal()
+```
+
+The cholesterol distribution is also not balanced and most people have normal cholesterol level.
+
+```{r bar-depression}
+ggplot(data, aes(x = Depression.Level)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Depression Level", x = "Depression", y = "Count") +
+  theme_minimal()
+```
+
+The depression level distribution is balanced.
+
+```{r bar-sleep}
+ggplot(data, aes(x = Sleep.Quality)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Sleep Quality", x = "Sleep Quality", y = "Count") +
+  theme_minimal()
+```
+
+The sleep quality distribution is balanced.
+
+```{r bar-diet}
+ggplot(data, aes(x = Dietary.Habits)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Dietary Habits", x = "Diet", y = "Count") +
+  theme_minimal()
+```
+
+The dietary habits distribution is also balanced.
+
+```{r bar-pollution}
+ggplot(data, aes(x = Air.Pollution.Exposure)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Air Pollution Exposure", x = "Pollution Exposure", y = "Count") +
+  theme_minimal()
+```
+
+The air pollution exposure distribution is balanced.
+
+```{r bar-employment}
+ggplot(data, aes(x = Employment.Status)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Employment Status", x = "Employment", y = "Count") +
+  theme_minimal()
+```
+
+The employment distribution is also balanced.
+
+```{r bar-marital}
+ggplot(data, aes(x = Marital.Status)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Marital Status", x = "Marital Status", y = "Count") +
+  theme_minimal()
+```
+
+The marital status distribution is balanced.
+
+```{r bar-apoe}
+ggplot(data, aes(x = Genetic.Risk.Factor..APOE.ε4.allele.)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Genetic Risk Factor: APOE-ε4 Allele",
+       x = "APOE-ε4 Status",
+       y = "Count") +
+  theme_minimal()
+```
+
+The genetic risk distribution is unbalanced where most people have no geenetic risk factor APOE-ε4 Allele.
+
+```{r bar-income}
+ggplot(data, aes(x = Income.Level)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Distribution of Income Level",
+       x = "Income Level",
+       y = "Count") +
+  theme_minimal()
+```
+
+The distribution of income level is balanced.
+
+```{r bar-social-engagement}
+ggplot(data, aes(x = Social.Engagement.Level)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Distribution of Social Engagement Level",
+       x = "Social Engagement Level",
+       y = "Count") +
+  theme_minimal()
+```
+
+The distribution of social engagement level is balanced.
+
+
+```{r bar-stress}
+ggplot(data, aes(x = Stress.Levels)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Distribution of Stress Levels",
+       x = "Stress Level",
+       y = "Count") +
+  theme_minimal()
+```
+
+The distribution of stress levels is balanced.
+
+```{r bar-living-area}
+ggplot(data, aes(x = Urban.vs.Rural.Living)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Living Area: Urban vs Rural",
+       x = "Living Area",
+       y = "Count") +
+  theme_minimal()
+```
+
+The living area distribution is balanced.
+
+
+```{r bar-alzheimers-diagnosis}
+ggplot(data, aes(x = Alzheimer.s.Diagnosis)) +
+  geom_bar(fill = "lightblue") +
+  labs(title = "Distribution of Alzheimer's Diagnosis",
+       x = "Diagnosis",
+       y = "Count") +
+  theme_minimal()
+```
+
+The distribution of alzheimer's diagnosis is unbalanced,most people have not been diagnosed with alzheimer.
+
+
+```{r diagnosis-percentages}
+# Count of each diagnosis category
+table(data$Alzheimer.s.Diagnosis)
+
+# Proportion (percentage) of each category
+round(prop.table(table(data$Alzheimer.s.Diagnosis)) * 100, 2)
+```
+The distribution of Alzheimer’s diagnosis shows that approximately 58% of individuals are not diagnosed with the disease, while 42% are. 
+
+ELENI------
+
+```{r predictions}
+glm.fit <- glm(Alzheimer.s.Diagnosis ~ ., data = data, family = binomial)
+summary(glm.fit)
+
+
+# This helps automatically drop variables that don’t improve the model.
+# Stepwise model selection (both directions)
+step_model <- step(glm.fit, direction = "both")
+
+# View summary of the updated model
+summary(step_model)
+
+install.packages("car")  # only do this once
+library(car)
+vif(step_model)
+
+pred_probs <- predict(step_model, type = "response")
+# Step 1: Create default class vector (assume Negative)
+glm_pred <- rep("Negative", length(pred_probs))
+
+# Step 2: Set to Positive if prob > 0.5
+glm_pred[pred_probs > 0.5] <- "Positive"
+
+# Step 3: Check a few predictions
+head(glm_pred)
+
+# Step 4: Compare to actual
+table(Predicted = glm_pred, Actual = data$Alzheimer.s.Diagnosis)
+```
+
+Commenting on the logistic regression output: 
+
+- Model type: Binary logistic regression using glm() with family = binomial
+- Target variable: Alzheimer's Diagnosis
+- Sample size: 74,283 observations
+- AIC (Akaike Information Criterion): 80,503 — lower AIC is better for model comparison, but on its own, not interpretable.
+- Residual deviance: 80,393 — compared to null deviance (100,742), this shows your model explains some variability, which is good.
+- Fisher scoring iterations: 4 — indicates convergence was achieved quickly.
+
+
+Some conclusions:
+
+1. Risk increases with age.
+2. Higher likelihood in Brazil, India, Mexico, Russia, South Africa compared to the baseline (likely the first country alphabetically). - (Positive coefficients)
+3. Lower likelihood in Canada, Japan, Norway, Sweden.  
+4. Genetic Risk Factor (APOE ε4 allele): Yes -> Strongest predictor in your model. Significantly increases risk.
+
+
+In the code above we simplified the logistic regression model using stepwise selection, which means that 
+our final model includes only the following predictors:
+
+- Country  
+- Age  
+- Family.History.of.Alzheimer.s  
+- Genetic.Risk.Factor..APOE.ε4.allele.  
+- Urban.vs.Rural.Living  
+
+
+✅ Accuracy is decent (71.6%)
+🟡 Sensitivity (60.9%) is moderate — your model catches about 61% of actual Alzheimer's cases.
+🟢 Specificity (79.1%) is good — it correctly identifies most people who don’t have Alzheimer’s.
+This suggests your model is slightly better at ruling out Alzheimer’s (true negatives) than detecting 
+it (true positives), which is common in imbalanced or subtle medical data.
+
+
+The VIF (Variance Inflation Factor) results that we get above are excellent. What we see:
+
+Variable	                      VIF	                Interpretation
+Country	                        1.015	            No multicollinearity (great!)
+Age	                            1.072	            Very low — no issues
+Family History of Alzheimer's	  1.027	            Very low — safe
+APOE ε4 Genetic Risk	          1.045	            Very low — safe
+Urban vs Rural Living	          1.000	            Practically perfect
+
+What do the above mean?
+No multicollinearity at all in your final model.
+This confirms that your predictors are statistically independent enough to trust the regression coefficients and p-values. We're good to go on interpretation, prediction, and evaluation.
+
