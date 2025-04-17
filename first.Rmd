@@ -605,3 +605,132 @@ Urban vs Rural Living	          1.000	            Practically perfect
 What do the above mean?
 No multicollinearity at all in your final model.
 This confirms that your predictors are statistically independent enough to trust the regression coefficients and p-values. We're good to go on interpretation, prediction, and evaluation.
+
+
+
+
+--------
+```{r  Balanced + Scaled dataset}
+library(caret)
+
+# Step 1: Rename the target variable to 'Group' (optional, for easier handling)
+train_data$Group <- as.factor(train_data$Alzheimer.s.Diagnosis)
+
+# Step 2: Upsample the data
+set.seed(123)
+train_upsampled <- upSample(x = train_data[, -which(names(train_data) %in% c("Group", "Alzheimer.s.Diagnosis"))],
+                            y = train_data$Group)
+
+# Step 3: Rename target column
+names(train_upsampled)[ncol(train_upsampled)] <- "Group"
+
+# Step 4: Scale the numeric predictors
+pre_proc <- preProcess(train_upsampled[, -which(names(train_upsampled) == "Group")],
+                       method = c("center", "scale"))
+
+train_scaled <- predict(pre_proc, train_upsampled[, -which(names(train_upsampled) == "Group")])
+
+# Step 5: Combine scaled predictors with target
+scaled_upsampled_df <- cbind(train_scaled, Group = train_upsampled$Group)
+
+# Step 6: Check the new dataset
+str(scaled_upsampled_df)
+
+scaled_upsampled_df
+```
+
+```{r  Split scaled_upsampled_df Dataset into Train/Test}
+set.seed(123)
+train_index <- createDataPartition(scaled_upsampled_df$Group, p = 0.8, list = FALSE)
+
+train_set <- scaled_upsampled_df[train_index, ]
+test_set  <- scaled_upsampled_df[-train_index, ]
+```
+
+
+```{r  Evaluation Function}
+library(caret)
+library(pROC)
+
+evaluate_model <- function(model_name, predicted, actual, probs = NULL) {
+  cm <- confusionMatrix(predicted, actual)
+  acc <- cm$overall["Accuracy"]
+  sens <- cm$byClass["Sensitivity"]
+  spec <- cm$byClass["Specificity"]
+  auc_val <- if (!is.null(probs)) {
+    roc_obj <- roc(actual, as.numeric(probs), quiet = TRUE)
+    auc(roc_obj)
+  } else {
+    NA
+  }
+  data.frame(Model = model_name,
+             Accuracy = round(acc, 3),
+             Sensitivity = round(sens, 3),
+             Specificity = round(spec, 3),
+             AUC = round(auc_val, 3))
+}
+```
+
+```{r  Logistic, Decision Tree, Random Forest, SVM, KNN}
+library(caret)
+library(pROC)
+library(rpart)
+library(randomForest)
+library(e1071)
+library(class)
+#  Train & evaluate all models
+results <- list()
+
+## 1. Logistic Regression
+log_model <- glm(Group ~ ., data = train_set, family = "binomial")
+log_probs <- predict(log_model, test_set, type = "response")
+log_pred <- ifelse(log_probs > 0.5, "Yes", "No")
+log_pred <- factor(log_pred, levels = levels(test_set$Group))
+results[[1]] <- evaluate_model("Logistic Regression", log_pred, test_set$Group, log_probs)
+```
+
+```{r Decision Tree}
+## 2. Decision Tree
+dt_model <- rpart(Group ~ ., data = train_set, method = "class")
+dt_pred <- predict(dt_model, test_set, type = "class")
+dt_probs <- predict(dt_model, test_set)[, "Yes"]
+results[[2]] <- evaluate_model("Decision Tree", dt_pred, test_set$Group, dt_probs)
+```
+
+```{r Random Forest}
+## 3. Random Forest
+rf_model <- randomForest(Group ~ ., data = train_set)
+rf_pred <- predict(rf_model, test_set)
+rf_probs <- predict(rf_model, test_set, type = "prob")[, "Yes"]
+results[[3]] <- evaluate_model("Random Forest", rf_pred, test_set$Group, rf_probs)
+```
+
+```{r SVM}
+## 4. Support Vector Machine (SVM)
+svm_model <- svm(Group ~ ., data = train_set, probability = TRUE, kernel = "linear")
+svm_pred <- predict(svm_model, test_set)
+svm_probs <- attr(predict(svm_model, test_set, probability = TRUE), "probabilities")[, "Yes"]
+results[[4]] <- evaluate_model("SVM", svm_pred, test_set$Group, svm_probs)
+```
+
+
+
+```{r KNN}
+## 5. KNN
+# Extract X and Y for KNN
+train_x <- train_set[, -which(names(train_set) == "Group")]
+test_x <- test_set[, -which(names(test_set) == "Group")]
+train_y <- train_set$Group
+
+# Run KNN with k = 5
+knn_pred <- knn(train = train_x, test = test_x, cl = train_y, k = 5)
+results[[5]] <- evaluate_model("KNN (k=5)", knn_pred, test_set$Group)
+```
+
+```{r results_df}
+
+# Combine all results
+results_df <- do.call(rbind, results)
+print(results_df)
+```
+
