@@ -1,0 +1,481 @@
+---
+title: "classification"
+author: "Eleni Yiasoumi, Iliana Frantzia, Marios Christodoulou"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Import Libraries
+```{r libraries,echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(moments)
+library(nortest)
+library(corrplot)
+library(caret)
+library(tidyr)
+library(glmnet)
+library(pROC)
+```
+
+```{r seed}
+set.seed(1)
+```
+
+### LOADING DATA AND INITIAL CLEANING
+```{r load-data, message=FALSE}
+data <- read.csv("alzheimers_prediction_dataset.csv")
+head(data)
+```
+
+```{r STR}
+str(data)
+```
+
+```{r SUMMARY}
+summary(data)
+```
+
+```{r missing values count}
+# Total number of missing values in the dataset
+sum(is.na(data))
+```
+```{r duplicated rows}
+# Number of duplicated rows
+sum(duplicated(data))
+```
+
+```{r unique values}
+# Check unique values for categorical columns
+cat_cols <- names(data)[sapply(data, is.character)]
+
+# Apply unique() to each categorical column and name the output
+unique_values <- lapply(data[cat_cols], unique)
+
+# Display the unique values nicely
+unique_values
+```
+
+```{r turn to factor}
+data <- data %>%
+  mutate(across(where(is.character), as.factor))
+```
+
+```{r rename target variable}
+# Rename the column from "Alzheimer.s.Diagnosis" to "Diagnosis"
+names(data)[names(data) == "Alzheimer.s.Diagnosis"] <- "Diagnosis"
+```
+
+We are going to relevel the target variable because we want "Yes" to be treated as the positive class in the model evaluation. 
+```{r relevel target variable}
+# Make sure it's a factor with proper levels
+data$Diagnosis <- factor(data$Diagnosis, levels = c("No", "Yes"))
+
+# Set "No" as reference so "Yes" is treated as the positive class
+data$Diagnosis <- relevel(data$Diagnosis, ref = "No")
+```
+
+
+### EDA
+
+Here will be all the plots of the variables and all the plots for exploring the relationship between our target variable and the other features. Also we will create correlation plot between the numeric features and point-biserial correlation for numeric columns vs binary target variable.
+
+From this section we should be able to :
+- Understand the distributions
+- Spot outliers or weird values
+- Visualize class imbalance
+- Identify skewness or strong correlations
+
+This step informs our decisions on scaling, encoding, feature engineering, and modeling.
+
+### VARIABLE SELECTION
+
+STEP 1: Prepare the data
+We’ll need:
+- Only numeric predictors
+- No missing values
+- Encoded categorical variables (use one-hot encoding)
+
+```{r prepare data for variable selection}
+
+# Ensure target is a factor
+data$Alzheimer.s.Diagnosis <- as.factor(data$Alzheimer.s.Diagnosis)
+
+# Assume `data` is your cleaned full dataset
+# Convert categorical variables to dummy variables
+dummies <- dummyVars(Alzheimer.s.Diagnosis ~ ., data = data)
+X <- predict(dummies, newdata = data)
+
+# Create response variable (as factor or numeric)
+y <- ifelse(data$Alzheimer.s.Diagnosis == "Yes", 1, 0)  # or just use as.factor(data$Alzheimer) for classification
+
+```
+
+
+STEP 2: Apply LASSO with Cross-Validation
+
+```{r lasso with cross validation}
+# Run LASSO (alpha = 1)
+cv_lasso <- cv.glmnet(as.matrix(X), y, alpha = 1, family = "binomial")  # logistic
+
+# Plot the cross-validated error
+plot(cv_lasso)
+```
+
+
+STEP 3: Get the Selected Features
+
+```{r selected features}
+# Coefficients at the lambda that minimizes CV error
+lasso_coef <- coef(cv_lasso, s = "lambda.min")
+selected_features <- rownames(lasso_coef)[lasso_coef[,1] != 0]
+selected_features <- selected_features[-1]  # remove intercept
+
+selected_features
+```
+
+These are the variables that LASSO kept, meaning they have non-zero coefficients and are considered useful for predicting Alzheimer’s diagnosis.
+
+We will now use these features for our models. We will create a dataset with these 27 features and the target variable.
+
+```{r subset with selected features}
+# Build reduced dataset with selected features and the target
+X_reduced <- X[, selected_features]
+data_reduced <- data.frame(X_reduced, Alzheimer.s.Diagnosis = y)
+head(data_reduced)
+```
+
+
+
+-------------------------------------------------
+### Logistic Regression with Stepwise Selection
+
+```{r log regre with stepwise selection}
+
+# First split the model before performing stepwise selection
+train_index <- createDataPartition(data$Diagnosis, p = 0.8, list = FALSE)
+train_data <- data[train_index, ]
+test_data  <- data[-train_index, ]
+
+model <- glm(Diagnosis ~ ., data = train_data, family = binomial)
+step(model)
+```
+
+So what are these results telling us? The most important features for our model are:
+- Urban.vs.Rural.Living
+- Air.Pollution.Exposure
+- Income.Level
+- Country
+- Family.History.of.Alzheimer.s 
+- Genetic.Risk.Factor..APOE.ε4.allele.
+- Age
+
+The stepwise selection model tried to minimize the AIC and having a low AIC means that our model performs the best with the according features. Also from the results above we can conclude that Genetic.Risk.Factor..APOE.ε4.allele.Yes has a strong positive effect. Moreover, Age and family history also have positive effects — older people and those with family history are at greater risk. Variables like Income Level and Air Pollution stayed in, but with small coefficients — they still helped explain some variance.
+
+```{r code evaluation for the above model}
+# Make predictions on test set
+predicted_probs <- predict(model, newdata = test_data, type = "response")
+
+# Classify based on a 0.5 threshold
+predicted_classes <- ifelse(predicted_probs > 0.5, "Yes", "No")
+
+# Confusion Matrix
+confusionMatrix(factor(predicted_classes), factor(test_data$Diagnosis), positive = "Yes")
+
+# AUC
+roc_obj <- roc(test_data$Diagnosis, predicted_probs)
+auc(roc_obj)
+```
+
+Our model achieved an accuracy of about 71.7%, with a balanced accuracy of 70%, and an AUC of ~0.79. This suggests the model has a decent ability to distinguish between patients with and without Alzheimer’s. While it performs better at identifying non-Alzheimer’s cases , it is less specific for detecting actual Alzheimer’s cases. The model significantly outperforms baseline guessing and shows moderate overall predictive agreement.
+
+We will explore further the threshold by creating the plot of Sensitivity & Specificity vs Threshold.
+```{r plot for threshold}
+# Create a range of thresholds to evaluate
+thresholds <- seq(0.1, 0.9, by = 0.01)
+
+# Create a dataframe to store results
+threshold_results <- data.frame(Threshold = thresholds,
+                                 Sensitivity = NA,
+                                 Specificity = NA)
+
+# Loop through each threshold and compute confusion matrix stats
+for (i in seq_along(thresholds)) {
+  t <- thresholds[i]
+  
+  predicted_class <- ifelse(predicted_probs > t, "Yes", "No")
+  predicted_class <- factor(predicted_class, levels = c("No", "Yes"))
+  
+  cm <- confusionMatrix(predicted_class, test_data$Diagnosis, positive = "Yes")
+  
+  threshold_results$Sensitivity[i] <- cm$byClass["Sensitivity"]
+  threshold_results$Specificity[i] <- cm$byClass["Specificity"]
+}
+
+# Plot
+library(ggplot2)
+
+ggplot(threshold_results, aes(x = Threshold)) +
+  geom_line(aes(y = Sensitivity), color = "blue", size = 1.2) +
+  geom_line(aes(y = Specificity), color = "red", size = 1.2) +
+  labs(title = "Sensitivity & Specificity vs Threshold",
+       y = "Value", x = "Threshold") +
+  theme_minimal() +
+  geom_vline(xintercept = 0.5, linetype = "dashed", color = "gray") +
+  annotate("text", x = 0.5, y = 0.5, label = "Default threshold = 0.5", vjust = -1)
+```
+
+Find Optimal Threshold Using ROC (Youden's Index)
+This automatically finds the threshold that maximizes (Sensitivity + Specificity − 1).
+```{r find optimal threshold}
+# Create ROC object
+roc_obj <- roc(test_data$Diagnosis, predicted_probs)
+
+# Get threshold that maximizes Youden’s Index
+optimal_coords <- coords(roc_obj, x = "best", best.method = "youden", transpose = FALSE)
+
+# View optimal threshold
+optimal_coords
+```
+
+The next step is to apply the optimal threshold to our analysis:
+```{r apply new threshold}
+# Use the optimal threshold from above
+optimal_threshold <- as.numeric(optimal_coords["threshold"])
+
+# Apply it
+final_pred_classes <- ifelse(predicted_probs > optimal_threshold, "Yes", "No")
+final_pred_classes <- factor(final_pred_classes, levels = c("No", "Yes"))
+
+# New confusion matrix
+confusionMatrix(final_pred_classes, test_data$Diagnosis, positive = "Yes")
+```
+
+By tuning the threshold, you’ve boosted sensitivity from ~61% (at 0.5) to ~83%, which means your model is now much better at identifying Alzheimer’s patients. While specificity decreased a bit (from ~79% to ~63%), this is a common and acceptable trade-off when detecting the positive class (Alzheimer's) is more important than avoiding false positives.
+
+To enhance the model’s ability to detect Alzheimer’s cases, we tuned the classification threshold using the ROC curve and Youden’s Index, identifying an optimal cutoff that balances sensitivity and specificity. At this new threshold, the model achieved an accuracy of 71.0%, a sensitivity of 82.5%, and a specificity of 62.9%. This reflects a deliberate trade-off: the model now correctly identifies the majority of Alzheimer’s patients, which is often more critical in medical settings than avoiding false positives. The AUC of 0.7975 indicates strong overall classification ability, and the balanced accuracy of 72.7% supports the model’s reliability across both classes. These results demonstrate the effectiveness of threshold tuning for improving clinical sensitivity.
+
+
+We will repeat the above process by using only the most important features, which we got from the stepwise selection
+```{r glm with important features}
+model_2 <- glm(Diagnosis ~ `Urban.vs.Rural.Living`+ `Air.Pollution.Exposure`+ `Income.Level`+ Country + `Family.History.of.Alzheimer.s`+ `Genetic.Risk.Factor..APOE.ε4.allele.`+ Age, data = train_data, family = binomial)
+```
+
+```{r predictions for model2}
+# Make predictions on test set
+predicted_probs_2 <- predict(model_2, newdata = test_data, type = "response")
+
+# Classify based on a 0.5 threshold
+predicted_classes_2 <- ifelse(predicted_probs_2 > 0.5, "Yes", "No")
+
+# Confusion Matrix
+confusionMatrix(factor(predicted_classes_2), factor(test_data$Diagnosis), positive="Yes")
+
+# AUC
+roc_obj_2 <- roc(test_data$Diagnosis, predicted_probs_2)
+auc(roc_obj_2)
+```
+
+```{r plot for threshold for model2}
+# Create a range of thresholds to evaluate
+thresholds_2 <- seq(0.1, 0.9, by = 0.01)
+
+# Create a dataframe to store results
+threshold_results_2 <- data.frame(Threshold = thresholds_2,
+                                 Sensitivity = NA,
+                                 Specificity = NA)
+
+# Loop through each threshold and compute confusion matrix stats
+for (i in seq_along(thresholds_2)) {
+  t <- thresholds_2[i]
+  
+  predicted_class_2 <- ifelse(predicted_probs_2 > t, "Yes", "No")
+  predicted_class_2 <- factor(predicted_class_2, levels = c("No", "Yes"))
+  
+  cm <- confusionMatrix(predicted_class_2, test_data$Diagnosis, positive = "Yes")
+  
+  threshold_results_2$Sensitivity[i] <- cm$byClass["Sensitivity"]
+  threshold_results_2$Specificity[i] <- cm$byClass["Specificity"]
+}
+
+# Plot
+ggplot(threshold_results_2, aes(x = Threshold)) +
+  geom_line(aes(y = Sensitivity), color = "blue", size = 1.2) +
+  geom_line(aes(y = Specificity), color = "red", size = 1.2) +
+  labs(title = "Sensitivity & Specificity vs Threshold",
+       y = "Value", x = "Threshold") +
+  theme_minimal() +
+  geom_vline(xintercept = 0.5, linetype = "dashed", color = "gray") +
+  annotate("text", x = 0.5, y = 0.5, label = "Default threshold = 0.5", vjust = -1)
+```
+
+```{r find optimal threshold}
+# Create ROC object
+roc_obj_2 <- roc(test_data$Diagnosis, predicted_probs_2)
+
+# Get threshold that maximizes Youden’s Index
+optimal_coords_2 <- coords(roc_obj_2, x = "best", best.method = "youden", transpose = FALSE)
+
+# View optimal threshold
+optimal_coords_2
+```
+
+```{r apply new threshold}
+# Use the optimal threshold from above
+optimal_threshold_2 <- as.numeric(optimal_coords_2["threshold"])
+
+# Apply it
+final_pred_classes_2 <- ifelse(predicted_probs_2 > optimal_threshold_2, "Yes", "No")
+final_pred_classes_2 <- factor(final_pred_classes_2, levels = c("No", "Yes"))
+
+# New confusion matrix
+confusionMatrix(final_pred_classes_2, test_data$Diagnosis, positive = "Yes")
+```
+
+We observe that the sensitivity in this case slightly improves to 83.03%.
+-------------------------------------------------
+
+
+
+
+
+
+### TRAIN/TEST SPLIT
+
+```{r split dataset}
+train_index <- createDataPartition(data_reduced$Alzheimer.s.Diagnosis, p = 0.8, list = FALSE)
+
+train_data <- data_reduced[train_index, ]
+test_data  <- data_reduced[-train_index, ]
+```
+
+### RESAMPLING
+
+Upsample the training set only.
+```{r resampling}
+upsampled_train <- upSample(x = train_data[, -ncol(train_data)],
+                             y = as.factor(train_data$Alzheimer.s.Diagnosis),
+                             yname = "Alzheimer")
+```
+
+### SCALING
+
+```{r scaling}
+# Scaling on upsampled training data
+scaling_model <- preProcess(upsampled_train[, -ncol(upsampled_train)], method = c("center", "scale"))
+scaled_train <- predict(scaling_model, upsampled_train[, -ncol(upsampled_train)])
+
+# Apply same scaling to test set
+scaled_test <- predict(scaling_model, test_data[, -ncol(test_data)])
+
+# Add back target column
+train_final <- data.frame(scaled_train, Alzheimer = upsampled_train$Alzheimer)
+test_final  <- data.frame(scaled_test, Alzheimer = test_data$Alzheimer.s.Diagnosis)
+```
+
+
+### MODELING
+
+1. Linear & Distance-Based Models
+
+LOGISTIC REGRESSION
+```{r logistic regression}
+log_model <- train(Alzheimer ~ ., data = train_final, method = "glm", family = "binomial")
+```
+
+LDA
+```{r lda}
+lda_model <- train(Alzheimer ~ ., data = train_final, method = "lda")
+```
+
+QDA
+```{r qda}
+qda_model <- train(Alzheimer ~ ., data = train_final, method = "qda")
+```
+
+kNN
+```{r kNN}
+knn_model <- train(Alzheimer ~ ., data = train_final, method = "knn", tuneLength = 10)
+```
+
+SVM
+```{r svm}
+svm_model <- train(Alzheimer ~ ., data = train_final, method = "svmLinear")
+```
+
+
+2. Tree-Based Models: We will use these on resampled but unscaled data like upsampled_train, test_data.
+
+DECISION TREE
+```{r decision tree}
+tree_model <- train(Alzheimer ~ ., data = upsampled_train, method = "rpart")
+```
+
+RANDOM FOREST
+```{r random forest}
+rf_model <- train(Alzheimer ~ ., data = upsampled_train, method = "rf")
+```
+
+GRADIENT BOOST
+```{r gb}
+gbm_model <- train(Alzheimer ~ ., data = upsampled_train, method = "gbm", verbose = FALSE)
+```
+
+
+3. Penalized/Regularized Models
+
+RIDGE
+```{r ridge}
+model <- train(Alzheimer ~ ., data = train_final, method = "glmnet", 
+                     trControl = trainControl("cv", number = 5),
+                     tuneGrid = expand.grid(alpha = 0, lambda = seq(0.0001, 1, length = 20)))
+```
+
+ELASTIC NET
+```{r elastic net}
+c_model <- train(Alzheimer ~ ., data = train_final, method = "glmnet",
+                       trControl = trainControl("cv", number = 5),
+                       tuneGrid = expand.grid(alpha = 0.5, lambda = seq(0.0001, 1, length = 20)))
+```
+
+
+
+### EVALUATION OF THE MODELS
+
+```{r evaluate}
+log_pred <- predict(log_model, newdata = test_final)
+confusionMatrix(log_pred, test_final$Alzheimer)
+
+lda_pred <- predict(lda_model, test_final)
+confusionMatrix(lda_pred, test_final$Alzheimer)
+
+qda_pred <- predict(qda_model, test_final)
+confusionMatrix(qda_pred, test_final$Alzheimer)
+
+knn_pred <- predict(knn_model, test_final)
+confusionMatrix(knn_pred, test_final$Alzheimer)
+
+svm_pred <- predict(svm_model, test_final)
+confusionMatrix(svm_pred, test_final$Alzheimer)
+
+tree_pred <- predict(tree_model, test_data)
+confusionMatrix(tree_pred, test_data$Alzheimer.s.Diagnosis)
+
+rf_pred <- predict(rf_model, test_data)
+confusionMatrix(rf_pred, test_data$Alzheimer.s.Diagnosis)
+
+gbm_pred <- predict(gbm_model, test_data)
+confusionMatrix(gbm_pred, test_data$Alzheimer.s.Diagnosis)
+
+ridge_pred <- predict(ridge_model, test_final)
+confusionMatrix(ridge_pred, test_final$Alzheimer)
+
+elastic_pred <- predict(elastic_model, test_final)
+confusionMatrix(elastic_pred, test_final$Alzheimer)
+```
+
