@@ -341,25 +341,12 @@ We observe that the sensitivity in this case slightly improves to 83.03%.
 -------------------------------------------------
 
 
-
-
-
-
-### TRAIN/TEST SPLIT
-
-```{r split dataset}
-train_index <- createDataPartition(data_reduced$Alzheimer.s.Diagnosis, p = 0.8, list = FALSE)
-
-train_data <- data_reduced[train_index, ]
-test_data  <- data_reduced[-train_index, ]
-```
-
 ### RESAMPLING
 
 Upsample the training set only.
 ```{r resampling}
 upsampled_train <- upSample(x = train_data[, -ncol(train_data)],
-                             y = as.factor(train_data$Alzheimer.s.Diagnosis),
+                             y = as.factor(train_data$Diagnosis),
                              yname = "Alzheimer")
 ```
 
@@ -374,10 +361,52 @@ scaled_train <- predict(scaling_model, upsampled_train[, -ncol(upsampled_train)]
 scaled_test <- predict(scaling_model, test_data[, -ncol(test_data)])
 
 # Add back target column
-train_final <- data.frame(scaled_train, Alzheimer = upsampled_train$Alzheimer)
-test_final  <- data.frame(scaled_test, Alzheimer = test_data$Alzheimer.s.Diagnosis)
+train_final <- data.frame(scaled_train, Diagnosis = upsampled_train$Alzheimer)
+test_final  <- data.frame(scaled_test, Diagnosis = test_data$Diagnosis)
+
 ```
 
+### APPLY MODEL_2 FOR THE FINAL 
+
+Find new optimal threshold
+```{r}
+#Find optimal threshold
+roc_obj <- roc(train_final$Diagnosis, train_final_probs)
+coords(roc_obj, x = "best", best.method = "youden")
+
+#use new threshold
+optimal_threshold <- as.numeric(coords(roc_obj, x = "best", best.method = "youden")["threshold"])
+```
+
+
+```{r}
+# Predict probabilities
+train_final_probs <- predict(model_2, newdata = train_final, type = "response")
+
+# Make sure Diagnosis is a factor with the right levels
+train_final$Diagnosis <- factor(train_final$Diagnosis, levels = c("No", "Yes"))
+
+# Apply optimal threshold to get predicted classes
+train_final_pred <- ifelse(train_final_probs > optimal_threshold, "Yes", "No")
+train_final_pred <- factor(train_final_pred, levels = c("No", "Yes"))
+
+# Confusion matrix
+confusionMatrix(train_final_pred, train_final$Diagnosis, positive = "Yes")
+```
+
+After tuning the classification threshold based on the distribution of predicted probabilities, the logistic regression model was applied to the upsampled and scaled training data. The model achieved an accuracy of 63.6%, with a sensitivity of 64.0% and a specificity of 63.2%, indicating balanced performance across both classes. The sensitivity suggests that the model correctly identified 64% of individuals diagnosed with Alzheimer’s, which is a significant improvement compared to the initial model that failed to detect any positive cases. The positive predictive value (63.5%) and negative predictive value (63.7%) indicate the model’s moderate reliability in making both positive and negative predictions. While the overall agreement (Kappa = 0.27) is considered fair, the adjusted threshold helped the model better capture Alzheimer’s cases, making it more suitable for contexts where early identification is critical.
+
+
+
+
+### TRAIN/TEST SPLIT
+
+```{r split dataset}
+train_index <- createDataPartition(data_reduced$Alzheimer.s.Diagnosis, p = 0.8, list = FALSE)
+
+train_data <- data_reduced[train_index, ]
+test_data  <- data_reduced[-train_index, ]
+```
 
 ### MODELING
 
