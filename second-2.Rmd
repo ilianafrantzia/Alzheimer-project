@@ -1,0 +1,1556 @@
+---
+title: "DSC 532- Fuel Regression project"
+names: Eleni Yiasoumi , Marios Christodoulou , Iliana Frantzia
+date: "2025-04-01"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+## Dataset Overview
+
+The **FuelConsumption.csv** dataset contains information on 1,067 observations (vehicles from the model year 2014 only) and 13 columns (variables). Each row represents a different vehicle model and the variables describe both the technical specifications and environmental performance of the vehicles.
+
+The columns of the dataset are :
+
+- **MODELYEAR** :	The year the vehicle model was manufactured.
+- **MAKE** :	The brand or manufacturer of the vehicle (e.g., Ford, BMW, Honda).
+- **MODEL**	The specific model name of the vehicle.
+- **VEHICLECLASS** :	Vehicle type  (e.g., SUV, Compact, Pickup truck).
+- **ENGINESIZE** :	The engine size in liters (L) ,where a higher value typically means a larger engine.
+- **CYLINDERS** :	The number of cylinders in the engine. More cylinders usually indicate higher power  and fuel consumption.
+- **TRANSMISSION** :	The type of gearbox (e.g., automatic, manual).
+- **FUELTYPE** :	The type of fuel the vehicle uses (e.g., gasoline, diesel, ethanol, natural gas).
+- **FUELCONSUMPTION_CITY** :	Fuel consumption in city driving conditions (liters per 100 kilometers).
+- **FUELCONSUMPTION_HWY** :	Fuel consumption on highways (liters per 100 kilometers).
+- **FUELCONSUMPTION_COMB** :	Combined fuel consumption (weighted average of city and highway) in liters per 100 kilometers.
+- **FUELCONSUMPTION_COMB_MPG** :	Combined fuel consumption in miles per gallon (MPG), this is the inverse of fuel consumption in L/100 km.
+- **CO2EMISSIONS** :	The amount of carbon dioxide (CO₂) emitted by the vehicle’s tailpipe, measured in grams per kilometer (g/km). This is the target variable.
+
+
+The primary objective of this project is to perform a regression analysis to explore the relationship between vehicle characteristics and their corresponding CO₂ emissions. By building a predictive model, we aim to understand which vehicle specifications most strongly influence CO₂ emissions, helping to identify key contributors to automotive environmental impact.
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Import Libraries
+
+```{r libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(moments)
+library(nortest)
+library(corrplot)
+library(caret)
+library(tidyr)
+library(GGally)
+library(car)
+library(glmnet)
+library(leaps)
+library(pls)
+library(stringr)
+library(knitr)
+library(ISLR2)
+```
+
+Load the FuelConsumption dataset and preview the first 6 rows of the dataset.
+
+```{r set_seed}
+set.seed(123)
+```
+
+# Data Overview
+
+```{r load-data}
+df<- read.csv("FuelConsumption.csv")
+head(df)
+```
+
+The dataset includes features like:
+
+```{r columns}
+colnames(df)
+``` 
+Data types and Structure of the dataset :
+
+```{r structure}
+str(df)
+```
+
+We have 1067 observations and 13 columns.
+
+
+Statistical summary of numerical variables :
+
+```{r summary}
+summary(df)
+```
+
+- MODEL YEAR: All the observations in this column contain the year 2014 because every vehicle in the dataset was manufactured in 2014.We should remove this column for our dataset since it can’t help differentiate between outcomes.
+
+- ENGINE_SIZE: Ranges from 1.0 to 8.4 liters and the mean engine size is 3.35 L, suggesting that most cars   have moderate engine sizes
+
+- CYLINDERS: Ranges from 3 to 12 cylinders, with a median of 6 cylinders and the average number of  cylinders is around 5.8. In general,more cylinders imply more engine power and therefore more CO2Emissions.
+
+- FUELCONSUMPTION_CITY / HWY / COMB: Combined fuel consumption (L/100 km) ranges from 4.7 to 25.8 and the   mean combined fuel consumption is 11.58, indicating a mix of fuel-efficient and less efficient vehicles.We are also going to check if there is a relationship between CMB and CITY,HWY.
+
+- FUELCONSUMPTION_COMB_MPG: Ranges from 11 to 60 miles per gallon with median 26 MPG, meaning half the cars get more than 26 MPG and half get less.
+
+- CO2EMISSIONS: Ranges from 108 to 488 grams/km, with a mean of 256.2 ,suggesting a wide spread in vehicle emissions, influenced by engine and fuel consumption differences
+
+We also observed that the fuel consumption comb and the fuel consumption comb mpg possibly give us the same results but in different units so we will have to drop one of these columns to avoid multicollinearity and unnessary redundancy.
+
+Also , vehicles with larger engines and more cylinders tend to have higher fuel consumption and CO₂ emissions.
+
+
+
+```{r which}
+# Model with the highest CO2 emissions
+df$MODEL[which.max(df$CO2EMISSIONS)]
+
+# Model with the lowest CO2 emissions
+df$MODEL[which.min(df$CO2EMISSIONS)]
+```
+
+The vehicle model with the highest CO₂ emissions is the E350 WAGON, emitting 488 g/km, while the model with the lowest CO₂ emissions is the PRIUS c, emitting only 100 g/km.
+
+```{r which-make}
+# Model with the highest CO2 emissions
+df$MAKE[which.max(df$CO2EMISSIONS)]
+
+# Model with the lowest CO2 emissions
+df$MAKE[which.min(df$CO2EMISSIONS)]
+```
+
+
+The vehicle make with the highest CO2 emissions is Ford, emitting 488 g/km, while the model with the lowest CO₂ emissions is Toyota, emitting only 100 g/km.
+
+```{r which-class}
+# Model with the highest CO2 emissions
+df$VEHICLECLASS[which.max(df$CO2EMISSIONS)]
+
+# Model with the lowest CO2 emissions
+df$VEHICLECLASS[which.min(df$CO2EMISSIONS)]
+```
+
+The vehicle class with the highest CO2 emissions is a van-passenger, while the model with the lowest CO₂ emissions is a compact vehicle.
+
+Count the number **missing values** per column
+
+```{r colsum}
+
+colSums(is.na(df))  
+
+```
+
+We have 0 missing values, so we don’t need to impute or remove anything.
+
+
+Number of duplicated rows:
+
+```{r duplicate}
+
+sum(duplicated(df))
+
+```
+
+There are no duplicated rows in the dataset.
+
+Check unique values for categorical columns
+
+```{r unique}
+
+cat_cols <- names(df)[sapply(df, is.character)]
+
+unique_values <- lapply(df[cat_cols], unique)
+unique_values
+unique_counts <- sapply(df[cat_cols], function(x) length(unique(x)))
+unique_counts
+```
+
+The dataset contains a rich variety of categorical features, including 39 car makes, hundreds of models, 16 vehicle classes, multiple transmission types and 4 fuel types.
+
+All categorical columns are free of spelling errors, case inconsistencies, or data entry mistakes.
+
+## Drop unessesary columns like Model year
+
+```{r delete-modelyear}
+df <- df[, !(names(df) %in% "MODELYEAR")]
+head(df)
+```
+
+
+## Difference between fuel consumption comb and mpg 
+
+```{r mpg diff}
+
+# 1. MPG Difference Check 
+calculated_mpg <- 235.214583 / df$FUELCONSUMPTION_COMB
+mpg_diff <- df$FUELCONSUMPTION_COMB_MPG - calculated_mpg
+
+# Threshold for the top 5% largest differences
+percentile_95 <- quantile(mpg_diff, 0.95)
+print(percentile_95)
+
+# Count how many exceed it
+sum(mpg_diff > percentile_95)  # Still gives 52
+
+```
+
+We checked the difference between fuel consumption comb and mpg and we observed that these two variables express the same concept, fuel efficiency ,but in inverse units and the formula of the mpg calculation is :
+
+MPG =235.214583 / (L/100km)
+
+There are 52 outliers that have difference in calculations.
+
+We will also remove FUELCONSUMPTION_COMB_MPG  from the dataset prior to analysis because it is mathematically derived from FUELCONSUMPTION_COMB using the above formula. Including both variables would introduce multicollinearity and redundancy in our regression model. 
+
+## Drop the fuel consumption comb mpg column
+
+```{r delete-mpg}
+df <- df[, !(names(df) %in% "FUELCONSUMPTION_COMB_MPG")]
+names(df)
+```
+
+## Create 2 new columns-GEARS,TRANSMISSION TYPE
+
+```{r transmission-2-col}
+df$TRANSMISSION_TYPE <- NA
+df$TRANSMISSION_TYPE[grepl("^A[0-9]$", df$TRANSMISSION)] <- "Automatic"
+df$TRANSMISSION_TYPE[grepl("^AM[0-9]$", df$TRANSMISSION)] <- "Automated Manual"
+df$TRANSMISSION_TYPE[grepl("^AS[0-9]$", df$TRANSMISSION)] <- "Select Shift Auto"
+df$TRANSMISSION_TYPE[grepl("^AV", df$TRANSMISSION)] <- "CVT"
+df$TRANSMISSION_TYPE[grepl("^M[0-9]$", df$TRANSMISSION)] <- "Manual"  
+
+# Convert to factor
+df$TRANSMISSION_TYPE <- factor(df$TRANSMISSION_TYPE)
+
+#  Extract the number of gears
+df$GEARS <- str_extract(df$TRANSMISSION, "[0-9]+$")
+df$GEARS <- as.numeric(df$GEARS)
+df$GEARS[is.na(df$GEARS)] <- 0  
+
+```    
+
+## FOR THE REPORT
+From the original TRANSMISSION column, we extracted two new variables to enhance our analysis:
+- **GEARS**: This column represents the number of gears in the vehicle's transmission system. It was derived by extracting the numeric part from the TRANSMISSION codes. For vehicles with Continuously Variable Transmissions (CVTs), which do not use fixed gear steps, we assigned a value of 0.
+
+-**TRANSMISSION_TYPE**: This column groups the transmission codes categories, such as "Automatic", "Manual", "CVT", "Automated Manual"and "Select Shift Auto" based on their prefix.
+These two new features allow for a more meaningful comparison of transmission systems in relation to CO2 emissions and fuel efficiency.
+
+
+```{r table-transmission}
+# Check if any values still NA
+table(df$TRANSMISSION_TYPE, useNA = "ifany")
+table(df$GEARS, useNA = "ifany")
+
+```
+## Drop the TRANSMISSION 
+
+```{r drop-transmission}
+df <- df[, !names(df) %in% c("TRANSMISSION")]
+head(df)
+```
+
+- A	: Automatic	
+- AM :	Automated Manual	
+- AS :	Automatic with Select Shift	
+- AV :	Continuously Variable (CVT)	
+- M : 	Manual
+
+- GEARS : captures the number of  gears (or speeds) in the vehicle’s transmission system.
+
+If a vehicle has a AV (CVT), it’s completely expected for the GEARS field to be NA or 0, because CVT  doesn't have gears like manual or traditional automatic cars.
+
+
+
+# Fuel Consumption Check (Simple and Weighted Average)
+
+```{r fuel-average}
+# Simple average
+simple_avg <- (df$FUELCONSUMPTION_CITY + df$FUELCONSUMPTION_HWY) / 2
+# Weighted average
+weighted_avg <- 0.55 * df$FUELCONSUMPTION_CITY + 0.45 * df$FUELCONSUMPTION_HWY
+
+# Compare to actual
+diff_simple <- abs(df$FUELCONSUMPTION_COMB - simple_avg)
+diff_weighted <- abs(df$FUELCONSUMPTION_COMB - weighted_avg)
+
+# Mean differences
+mean(diff_simple)
+mean(diff_weighted)
+
+```
+
+We first perform some tests to see which formula is used for the calculation of the average of fuel consumption in city and in highway.The two possible averages is the simple average and the 55/45 weighted average.By looking at the mean above, we can see that the formula with the lower mean difference is the one likely used to compute. 
+So the formula used is:
+     COMB = 0.55 x CITY + 0.45 x HWY
+
+So there is a clearly linear realtionship between fuel comsumption combined with city and highway.
+The next step is to set a threshold:
+A proper threshold could be around 0.1 since the mean difference is close to 0.02510778
+
+
+## Identify variable types
+
+```{r variable-types}
+# Categorical columns
+cat_cols <- names(df)[sapply(df, function(x) is.factor(x) || is.character(x))]
+
+# Numeric columns
+num_cols <- names(df)[sapply(df, is.numeric)]
+
+cat("CATEGORICAL COLUMNS:\n")
+print(cat_cols)
+
+cat("\nNUMERIC COLUMNS:\n")
+print(num_cols) 
+```
+
+
+## Numerical columns plots
+
+
+**Engine Size distribution plots**
+
+The engine size column has 49 unique values so we will plot a histogram to check the distribution 
+
+```{r histogram-engine}
+
+ggplot(df, aes(x = ENGINESIZE)) +
+geom_histogram(bins = 30, fill = "steelblue", color = "black") +
+theme_minimal()
+labs(title = "Distribution of Engine Size", x = "Engine Size", y = "Count")
+
+
+```
+
+Most vehicles have engine sizes between 2.0 and 4.0 liters, with notable peaks around 2.0L and 3.5L. The distribution is probably right-skewed  , meaning that while smaller engines are very common, a smaller number of vehicles have larger engines (above 5.0L).
+
+```{r boxplot-engine}
+boxplot(df$ENGINESIZE, 
+        main = "ENGINE SIZE",
+        ylab = "ENGINE SIZE",
+        col = "lightblue")
+```
+
+Also, from the box-plot as we can observe  we have one outlier but when we check it with below calculation we can see that there are 2 outliers at the same value. 
+
+```{r check-the-number-of-outlier}
+bp_stats_engine <- boxplot.stats(df$ENGINESIZE)
+engine_outliers <- bp_stats_engine$out
+num_engine_outliers <- length(engine_outliers)
+print(num_engine_outliers)
+```
+
+## Skewness of engine size 
+
+```{r skew-engine}
+skewness(df$ENGINESIZE)
+```
+
+The skewness of engine size  is around 0.57 so we can comfirm that it is right-skewed as we observed from the histogram and boxplot above.
+
+
+**Fuel Consumption City distribution plots** 
+ 
+```{r hist-fuel-city}
+ggplot(df, aes(x = FUELCONSUMPTION_CITY)) +
+geom_histogram(bins = 30, fill = "steelblue", color = "black") +
+theme_minimal()
+labs(title = "Fuel Consumption City", x = "Fuel Consumption City", y = "Count")
+
+```
+
+The histogram shows the distribution of fuel consumption in city , measured in liters per 100 kilometers (L/100 km). Most vehicles consume between 8 and 15 L/100 km, with a clear peak around 9–13 L/100 km, suggesting that this is the typical range for city fuel consumption in 2014 vehicles.
+The distribution is right-skewed, showing that while most cars are moderately fuel-efficient in the city, there are several vehicles with much higher consumption, reaching up to 30 L/100 km. These higher values likely correspond to larger, heavier or performance vehicles.
+
+```{r fuelconsCITY-boxplot}
+boxplot(df$FUELCONSUMPTION_CITY, 
+        main = "FUEL CONSUMPTION CITY",
+        ylab = "FUEL CITY",
+        col = "lightblue")
+
+```
+
+The boxplot of city fuel consumption shows that the majority of vehicles consume between 10 and 16 liters per 100 km under urban driving conditions,the median lies near 13.5 L/100 km.There are multiple outliers above 20 L/100 km, suggesting the presence of less efficient, high-consumption vehicles.
+
+```{r outliers-city}
+bp_stats_city <- boxplot.stats(df$FUELCONSUMPTION_CITY)
+city_outliers <- bp_stats_city$out
+num_city_outliers <- length(city_outliers)
+print(num_city_outliers)
+```
+
+```{r skew-city}
+skewness(df$FUELCONSUMPTION_CITY)
+
+```
+
+The skewness is around 0.90, indicating a moderate right-skewed distribution. This means that while most vehicles have moderate city fuel consumption, there are 26 high fuel consumption outliers.
+
+
+**Fuel Consumption Highway distribution plots**
+
+```{r hist-fuel-hwy}
+ggplot(df, aes(x = FUELCONSUMPTION_HWY)) +
+geom_histogram(bins = 30, fill = "steelblue", color = "black") +
+theme_minimal()
+labs(title = "Fuel Consumption Highway", x = "Fuel Consumption Hwy", y = "Count")
+
+```
+
+This histogram displays the distribution of fuel consumption during highway, measured in L/100 km. Most vehicles consume between 7 and 11 L/100 km, with a clear peak around 8 to 9 L/100 km, suggesting that highway driving is generally more fuel-efficient compared to city driving.Similar to the city fuel consumption plot, the distribution is right-skewed, with a smaller number of vehicles showing much higher highway fuel use, exceeding 15 L/100 km. These outliers likely correspond to larger or high-performance vehicles that are less optimized for long-distance efficiency.
+
+```{r fuelconsHWY-box}
+boxplot(df$FUELCONSUMPTION_HWY, 
+        main = "FUEL CONSUMPTION HIGHWAY",
+        ylab = "hwy",
+        col = "lightblue")
+
+```
+
+From the boxplot we can see that the median lies near 13.5 L/100 km and there are multiple outliers above 20 L/100 km, suggesting the presence of less efficient, high-consumption vehicles. 
+
+```{r outliers-hwy}
+bp_stats_hwy <- boxplot.stats(df$FUELCONSUMPTION_HWY)
+hwy_outliers <- bp_stats_hwy$out
+num_hwy_outliers <- length(hwy_outliers)
+print(num_hwy_outliers)
+```
+
+## Skewness of fuel consumption highway
+
+```{r skew-city}
+skewness(df$FUELCONSUMPTION_HWY)
+
+```
+
+The skewness  is 1.26, indicating a strong right-skewed distribution as most vehicles consume fuel between 7 and 11 L/100 km, but there are 35 outliers with consumption exceeding 15 L/100 km.
+
+**Fuel Consumption Combined distribution plots**
+
+```{r hist-fuel-comb}
+ggplot(df, aes(x = FUELCONSUMPTION_COMB)) +
+geom_histogram(bins = 30, fill = "steelblue", color = "black") +
+theme_minimal()
+labs(title = "Fuel Consumption (Combined)", x = "Fuel Consumption Comb", y = "Count")
+
+```
+
+This histogram shows the distribution of combined fuel consumption, which averages city and highway fuel use, measured in L/100 km. The majority of vehicles fall between 8 and 13 L/100 km, with a peak around 9 to 11 L/100 km, indicating that most cars in the dataset are moderately fuel-efficient under average driving conditions.As from  previous, the distribution is right-skewed, meaning a small number of vehicles consume significantly more fuel,up to over 25 L/100 km. 
+
+
+```{r fuelconsCOMB-boxplot}
+boxplot(df$FUELCONSUMPTION_COMB, 
+        main = "FUEL CONSUMPTION COMBINED",
+        ylab = "comb",
+        col = "lightblue")
+
+```
+
+The median of fuel combined consumption is approximately 11 L/100 km.There are multiple outliers above 18 L/100 km. These outliers likely represent vehicles with larger engines or heavier weight classes, leading to higher fuel consumption across all driving conditions. 
+
+
+
+```{r outliers-comb}
+bp_stats_comb <- boxplot.stats(df$FUELCONSUMPTION_COMB)
+comb_outliers <- bp_stats_comb$out
+num_comb_outliers <- length(comb_outliers)
+print(num_comb_outliers)
+```
+
+## Skewness of fuel consumption combined
+
+```{r skew-comb}
+skewness(df$FUELCONSUMPTION_COMB)
+```
+
+The skewness is around 1.03, indicating a moderate right-skew distribution. This suggests that while most vehicles in the dataset have moderate combined fuel consumption (around 9–13 L/100 km), there are also 32 outliers that use more fuel, likely represent large SUVs, trucks or performance vehicles.
+
+
+**Gears Distribution plots**
+
+```{r hist-gears}
+ggplot(df, aes(x = GEARS)) +
+  geom_bar(fill = "steelblue") +
+  scale_x_continuous(breaks = 0:10, limits = c(0, 10)) +
+  theme_minimal()
+  labs(title = "Distribution of Number of Gears",
+       x = "Number of Gears",
+       y = "Count")
+
+```
+
+The bar plot shows that the majority of vehicles in the dataset have 6-speed transmissions, making it the most common number of gears.Vehicles with 8 and 7 gears also appear frequently, suggesting a trend toward higher-speed gearboxes in modern vehicles.Very few vehicles use 4 or 5-speed transmissions and only a small number have 9 gears, indicating these are either older models or specific to performance .
+
+```{r boxplot-gears}
+boxplot(df$GEARS, 
+        main = "Number of Gears",
+        ylab = "Gears",
+        col = "lightblue")
+
+```
+
+The boxplot that the median is centered at 6 gears. However, outliers such as 0 gears (CVTs), 4 gears (possibly older or budget models) and 9 gears (high-end vehicles) reflect the range of transmission technologies .
+
+
+```{r outliers-gears}
+bp_stats_gears <- boxplot.stats(df$GEARS)
+gears_outliers <- bp_stats_gears$out
+num_gears_outliers <- length(gears_outliers)
+print(num_gears_outliers)
+```
+
+```{r skew-gears}
+skewness(df$GEARS)
+```
+
+The skewness is –1.95, indicating a strong left-skewed distribution. While the majority of vehicles have higher gear counts (6 to 8 gears), the presence of 102 outliers with low,zero gears ( CVTs) or 4-speed transmissions  reflect the asymmetry in the transition in modern vehicles toward more advanced, higher-gear transmissions.
+
+**CO2 Emissions distribution plots**
+ 
+```{r hist-co2}
+ggplot(df, aes(x = CO2EMISSIONS)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "black") +
+  theme_minimal()
+  labs(title = "Distribution of CO2 Emissions", x = "CO2 Emissions (g/km)", y = "Count")
+```
+
+The histogram illustrates the distribution of CO₂ emissions (in grams per kilometer) for cars. Most cars emit between 180 and 300 g/km, with the highest concentration around 200–250 g/km, which likely represents average passenger vehicles.
+
+The distribution shows a slight right skew, indicating that while most vehicles have moderate emissions, there are several high-emission outliers exceeding 400 g/km. These are likely large-engine, high-consumption models such as SUVs or performance vehicles.
+
+```{r boxplot co2}
+boxplot(df$CO2EMISSIONS, 
+        main = "CO2 EMISSIONS",
+        ylab = "CO2 EMISSIONS",
+        col = "lightblue")
+
+```
+
+The boxplot shows a moderate right-skewed distribution, with a median of approximately 250 g/km. Most vehicles emit between 200 and 300 g/km, but several outliers exceed 400 g/km, representing high-emission vehicles .
+
+```{r outliers-co2}
+bp_stats_co2 <- boxplot.stats(df$CO2EMISSIONS)
+co2_outliers <- bp_stats_co2$out
+num_co2_outliers <- length(co2_outliers)
+print(num_co2_outliers)
+```
+
+```{r skew-co2}
+skewness(df$CO2EMISSIONS)
+
+```
+
+The skewness is around 0.5, comfirming the mild right-skew in the distribution. This suggests that most vehicles emit moderate levels of CO₂, while there are 6  high-emission vehicles such as large or performance-focused models. 
+
+
+## Categorical columns plots 
+
+
+**Cylinders distribution plots**
+
+```{r hist-cylinders}
+ggplot(df, aes(x = CYLINDERS)) +
+  geom_histogram(bins = 15, fill = "steelblue", color = "black") +theme_minimal()
+  labs(title = "Distribution of Cylinders", x = "Cylinders", y = "Count")
+```
+
+
+The histogram shows the distribution of the number of cylinders across vehicles in the dataset. The majority of cars have 4, 6 or 8 cylinders, with 4-cylinder engines being the most common, followed by 6 and 8 cylinders. This aligns with typical engine found in compact, mid-sized and larger vehicles.Higher cylinder counts like 10 and 12 cylinders are rare, suggesting they are used in high-performance or luxury vehicles. Overall, the plot highlights that most vehicles are built for everyday efficiency, with fewer models designed for high power output.
+
+
+```{r cylinders-boxplot}
+boxplot(df$CYLINDERS, 
+        main = "CYLINDERS",
+        ylab = "Cylinders",
+        col = "lightblue")
+
+```
+
+The boxplot shows a relatively symmetric distribution centered around 6 cylinders, with most vehicles ranging between 4 and 8 cylinders.A few vehicles in the dataset feature 12-cylinder engines, likely representing sports or luxury models.We do not observe any outliers in the cylinders distribution.
+
+```{r skew-cylinders}
+skewness(df$CYLINDERS)
+
+```
+
+The skewness is 0.79, indicating a moderate right-skewed distribution,unlike the symmetric we saw from the boxplot. While the majority of vehicles have 4 to 6 cylinders, the presence of a smaller number of high-cylinder models (8–12 cylinders).
+
+**Make distribution plot**
+
+```{r bar-make, fig.width=10, fig.height=12}
+df %>%
+  count(MAKE, sort = TRUE) %>%
+  ggplot(aes(x = reorder(MAKE, n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Car Makes", x = "Make", y = "Count")
+```
+
+From the barplot of make distribution, we observe that the most common car  in the dataset are Ford, Chevrolet, BMW, Mercedes-Benz.On the other end, premium and niche brands like Rolls-Royce, Aston Martin and Lamborghini appear far less frequently, likely due to their lower production volumes and their expensive price.
+
+**Model distribution plot**
+
+```{r bar-model}
+df %>%
+  count(MODEL, sort = TRUE) %>%
+  top_n(10) %>%
+  ggplot(aes(x = reorder(MODEL, n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Top 10 Car Models", x = "Model", y = "Count")
+```
+
+We have over 600 car models so its impossible to display them all.However,the bar chart above displays the top 10 most frequently occurring car models in the dataset. The most common models are: F150 FFV 4X4,F150 FFV.These models appear between 8 times each in the dataset.Notably, Ford has multiple variants of the F150 among the most frequent models, reflecting its strong market presence and product variety in 2014.
+
+
+**Vehicle class distribution plot**
+
+```{r bar-class,fig.width=9, fig.height=9}
+
+ggplot(df, aes(x = fct_rev(fct_infreq(VEHICLECLASS)), fill = VEHICLECLASS)) +
+  geom_bar(fill = "steelblue") +
+  theme_minimal() +
+  coord_flip() +
+  labs(title = "Distribution of Vehicle Classes", x = "Vehicle Class", y = "Count") 
+
+
+```
+
+The bar chart above presents the distribution of vehicle classes within the dataset. The most common classes are mid-size, compact,these two classes comfirm our assumption above from cylinders distribution. Smaller segments of the dataset include two-seaters, subcompacts and pickup trucks, as well as a variety of less common vehicle types such as minivans,vans, station wagons and special purpose vehicles.
+
+
+**Fuel type distribution plot**
+
+```{r bar-fueltype}
+
+ggplot(df, aes(x = FUELTYPE, fill = FUELTYPE)) +
+  geom_bar(fill="steelblue") +
+  theme_minimal() +
+  labs(title = "Fuel Type Distribution", x = "Fuel Type", y = "Count") 
+```
+
+The fuel type distribution chart reveals that the majority of vehicles in the dataset run on regular gasoline (X), followed closely by those using premium gasoline (Z). In contrast, vehicles that use ethanol (E85) and diesel (D) are significantly less common. This suggests that the dataset is heavily weighted towards traditional gasoline-powered vehicles, which reflects market trends in 2014.It is important to consider this imbalance when analyzing fuel consumption and CO2 emissions, as different fuel types have distinct environmental and performance characteristics.
+
+
+**Transmission Type distribution plot**
+
+```{r bar-trans-type,fig.height=8,fig.width=8}
+ggplot(df, aes(x = TRANSMISSION_TYPE)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Distribution of Transmission Types",
+       x = "Transmission Type",
+       y = "Count") +theme_minimal()
+
+```
+
+The distribution of transmission types reveals that Automatic transmissions dominate the dataset, followed closely by Select Shift Auto systems.Manual transmissions are also common, but less so.The presence of CVTs is relatively limited.Automated Manual transmissions are also rare.
+
+
+
+## Numerical columns compared with CO2EMISSIONS
+
+**Engine size compared to CO2 Emissions**
+
+```{r co2-engine}
+ggplot(df, aes(x = ENGINESIZE, y = CO2EMISSIONS)) +
+  geom_point(alpha = 0.4, color = "black") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  theme_minimal() +
+  labs(title = "CO2 Emissions vs Engine Size", x = "Engine Size (L)", y = "CO2 Emissions (g/km)")
+```
+
+As the scatterplot shows, there is a clear positive linear relationship between engine size and CO2 emissions,where the red line is a linear regression lines. This occurs because larger engines burn more fuel to generate greater power, resulting in more CO2 output per kilometer. Vehicles with small engines (1.5–2.0L) generally emit less CO2, while vehicles with large engines (5.0L or higher) contribute significantly more CO2 emissions. 
+
+
+**Fuel Consumption City compared to CO2 Emissions** 
+
+```{r co2-fuelcity}
+ggplot(df, aes(x = FUELCONSUMPTION_CITY, y = CO2EMISSIONS)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +theme_minimal()+
+  labs(title = "Fuel consumption city vs CO2 Emissions")
+```
+
+The scatterplot shows a strong positive linear relationship between fuel consumption in the city and CO₂ emissions. As vehicles consume more fuel per 100 km in urban settings, they also emit more CO₂.The red trend line confirms this linearity,where, vehicles with low city fuel consumption (~6–10 L/100 km) typically emit around 150–250 g/km of CO₂, while those with high city consumption (~20–30 L/100 km) emit up to 450–500 g/km.This is expected, since city driving involves frequent stops , which increases fuel usage and emissions. 
+
+**Fuel Consumption Highway compared to CO2 Emissions** 
+
+```{r co2-hwy}
+ggplot(df, aes(x = FUELCONSUMPTION_HWY, y = CO2EMISSIONS)) + geom_point(alpha = 0.5) +
+geom_smooth(method = "lm", se = FALSE, color = "red") +
+  theme_minimal()+
+labs(title = "Fuel consumption highway vs CO2 Emissions")
+```
+
+The scatterplot shows a strong positive relationship between fuel consumption on the highway and CO₂ emissions. Vehicles that use more fuel during highway driving also emit more CO₂ per kilometer.In general, vehicles with lower highway fuel consumption (5–10 L/100km) tend to emit around 150–250 g/km of CO₂, while those with higher consumption (15–20 L/100km) can emit over 400 g/km.
+
+**Fuel Consumption Combined compared to CO2 Emissions** 
+
+```{r co2-fuel-cmb}
+ggplot(df, aes(x = FUELCONSUMPTION_COMB, y = CO2EMISSIONS)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +theme_minimal() +
+  labs(title = "Fuel consumption combined vs CO2 Emissions")
+```
+
+The scatterplot shows a very strong positive linear relationship between combined fuel consumption and CO₂ emissions. As fuel consumption combined increases, CO2Emissions also increase sharply.Most vehicles with combined fuel consumption between 5 and 15 L/100 km emit between 120 and 350 g/km of CO₂, while those with very high consumption (20–25 L/100 km) exceed 400–450 g/km.
+This combined metric, which averages city and highway consumption, serves as a strong overall predictor of CO₂ emissions.
+
+**Gears compared to CO2 Emissions** 
+
+```{r co2-gears}
+ggplot(df, aes(x = factor(GEARS), y = CO2EMISSIONS)) +
+  geom_boxplot(fill = "skyblue") +
+  labs(title = "CO2 Emissions by Number of Gears",
+       x = "Number of Gears",
+       y = "CO2 Emissions (g/km)") +
+  theme_minimal()
+
+```
+
+From the boxplots of gears compared to CO2 emissios we can see that vehicles with 0 gears (CVTs) have the lowest CO2 emissions, with low median.Vehicles with 4 gears have the highest emissions, with a high median and wide spread  likely due to older or less efficient models.For 5 to 9 gears, the median emissions tend to decrease slightly as gear count increases.This suggests that more gears may help optimize fuel use and reduce CO2 emissions, possibly because the engine can operate more efficiently at different speeds.
+
+## Categorical Columns compared to CO2Emissions
+
+**Fuel Type compared to CO2emissions**
+
+```{r co2-fueltype}
+ggplot(df, aes(x = FUELTYPE, y = CO2EMISSIONS, fill = FUELTYPE)) +
+  geom_boxplot(fill="skyblue") +
+  theme_minimal() +
+  labs(title = "CO2 Emissions by Fuel Type", x = "Fuel Type", y = "CO2 Emissions (g/km)") +
+  theme(legend.position = "none")  
+
+```
+
+The boxplot reveals differences in CO2 emissions based on fuel type. Vehicles using fuel type E (Ethanol) have the highest median CO2 emissions, suggesting that this fuel is less efficient or commonly used in higher-emission vehicles.
+In contrast, fuel type D (Diesel) shows the lowest median emissions, indicating greater fuel efficiency. Fuel type X (Regular gasoline) displays a wide range of emissions with more high emission as outliers. Fuel type Z (Premium gasoline) lies in between, with moderate emissions.Overall, this comparison highlights the impact of fuel choice on environmental performance.
+
+```{r co2-class,fig.height=8,fig.width=8}
+
+
+ggplot(df, aes(x = VEHICLECLASS, y = CO2EMISSIONS)) +
+  geom_boxplot(fill = "skyblue") +
+  labs(title = "CO2 Emissions by Vehicle Class",
+       x = "Vehicle Class",
+       y = "CO2 Emissions (g/km)") +
+  theme_minimal() 
+
+```
+
+**Transmission Type compared to CO2Emissions**
+
+```{r co2-trans-type,fig.width=6}
+
+ggplot(df, aes(x = TRANSMISSION_TYPE, y = CO2EMISSIONS)) +
+  geom_boxplot(fill = "skyblue") +
+  labs(title = "CO2 Emissions by Transmission Type",
+       x = "Transmission Type",
+       y = "CO2 Emissions (g/km)") +
+  theme_minimal() 
+```
+
+The boxplot illustrates the distribution of CO₂ emissions across five different transmission categories: Automated Manual, Automatic, CVT , Manual and Select Shift Automatic. We observe that automatic transmissions have the highest variability in emissions and among the highest median values, indicating that these vehicles tend to emit more CO2 on average. Similarly, select shift automatics and automated manuals also show relatively high median emissions and wider interquartile ranges.In contrast, CVTs have the lowest median CO₂ emissions, with fewer  outliers.  Manual transmissions also show a lower median compared to automatics.
+Vehicles with CVTs and manual transmissions tend to be more environmentally friendly in terms of emissions, while automatics and select shift systems are generally associated with higher emissions, likely due to being paired with more powerful engines or heavier vehicle classes.
+
+**Cylinders compared to CO2Emissions**
+
+```{r co2-cylinders}
+
+ggplot(df, aes(x = factor(CYLINDERS), y = CO2EMISSIONS)) +
+  geom_boxplot(fill = "skyblue") +
+  labs(title = "CO2 Emissions by Number of Cylinders",
+       x = "Number of Cylinders",
+       y = "CO2 Emissions (g/km)") +
+  theme_minimal()
+
+```
+
+The boxplot demonstrates a clear upward trend in CO₂ emissions as the number of cylinders increases.
+Vehicles with 3 or 4 cylinders have the lowest median emissions, typically under 220 g/km, reflecting the fuel efficiency of small engines.
+In contrast, vehicles with 8 to 12 cylinders have significantly higher median emissions, often exceeding 350 g/km.This trend comfirms that more cylinders lead to higher fuel consumption,meaning that greater CO2 emissions.
+
+
+
+### Correlations with C02 Emissions
+
+```{r corr-co2}
+# Remove cylinders from numeric data
+numeric_data <- df[, sapply(df, is.numeric)]
+numeric_data <- numeric_data[, !colnames(numeric_data) %in% "CYLINDERS"]
+
+cor_matrix <- cor(numeric_data, use = "complete.obs")
+
+cor_target <- cor_matrix[, "CO2EMISSIONS"]
+
+sort(cor_target, decreasing = TRUE)
+
+```
+
+Scatterplot matrix of all numerical features
+
+```{r pairs-numeric}
+
+pairs(numeric_data, main = "Scatterplot Matrix of All Numeric Variables")
+
+```
+
+The scatterplot matrix provides a view of the relationships between all numeric variables:
+- There is a very strong linear relationship between FUELCONSUMPTION_COMB, FUELCONSUMPTION_CITY and FUELCONSUMPTION_HWY, as expected since combined fuel consumption is derived from the city and highway values.
+- CO2EMISSIONS shows strong positive correlations with fuel consumption variables and ENGINESIZE, indicating that higher fuel usage and larger engines are associated with increased emissions.
+- GEARS appears to have a weaker relationship with other variables, indicating that gear count alone may not be a strong predictor of emissions or consumption.
+Overall, the matrix reveals that multicollinearity may be present among fuel consumption features, which should be considered during model building.
+
+#####{r correlation-matrix}
+corrplot(cor_matrix,
+         method = "color",
+         type = "upper",
+         tl.cex = 0.8,
+         title = "Correlation Heatmap",
+         mar = c(0, 0, 1, 0))
+
+
+
+Dark blue = strong positive correlation (close to +1)
+Dark red = strong negative correlation (close to -1)
+Lighter colors = weak or no correlation (close to 0)
+
+The correlation heatmap illustrates the strength of relationships between numeric variables. It reveals:
+- A very strong positive correlation between all fuel consumption variables FUELCONSUMPTION_CITY, FUELCONSUMPTION_HWY and FUELCONSUMPTION_COMB, as expected.
+- CO2EMISSIONS is highly correlated with FUELCONSUMPTION_COMB, followed closely by FUELCONSUMPTION_CITY and ENGINESIZE, confirming that increased fuel usage and larger engine sizes lead to higher emissions.
+- GEARS has a low or weak correlation with all other variables, suggesting it may not be a strong predictor of CO2 emissions on its own.
+This heatmap also helps identify potential multicollinearity, particularly among the fuel-related features, which should be addressed when building regression models.
+
+**Fuel consumption combined and Fuel consumption city correlation**
+
+```{r relation-comb-city}
+
+ggplot(df, aes(x = FUELCONSUMPTION_CITY, y = FUELCONSUMPTION_COMB)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(
+    title = "Linear Relationship Between City and Combined Fuel Consumption",
+    x = "City Fuel Consumption (L/100 km)",
+    y = "Combined Fuel Consumption (L/100 km)"
+  )
+```
+
+```{r corr-city-comb}
+cor(df$FUELCONSUMPTION_CITY, df$FUELCONSUMPTION_COMB)
+
+```
+
+**Fuel consumption combined and Fuel consumption highway correlation**
+
+```{r relation-comb-hwy}
+
+ggplot(df, aes(x = FUELCONSUMPTION_HWY, y = FUELCONSUMPTION_COMB)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(
+    title = "Linear Relationship Between Highway and Combined Fuel Consumption",
+    x = "Highway Fuel Consumption (L/100 km)",
+    y = "Combined Fuel Consumption (L/100 km)"
+  )
+```
+
+```{r corr-comb-hwy}
+cor(df$FUELCONSUMPTION_COMB, df$FUELCONSUMPTION_HWY)
+```
+
+**Fuel consumption highway and Fuel consumption city correlation**
+
+```{r city-hwy}
+ggplot(df, aes(x = FUELCONSUMPTION_CITY, y = FUELCONSUMPTION_HWY)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = TRUE, color = "blue") +
+  labs(
+    title = "Linear Relationship Between City and Highway Fuel Consumption",
+    x = "City Fuel Consumption (L/100 km)",
+    y = "Highway Fuel Consumption (L/100 km)"
+  )
+```
+
+```{r corr-city-hwy}
+cor(df$FUELCONSUMPTION_CITY, df$FUELCONSUMPTION_HWY)
+```
+
+We can comfirm that the fuel consumption variables are strongly correlated as we saw from the above plots.
+
+## Split data
+
+We are going to split our data to train and test sets (80% train data and 20% test data)
+
+```{r split}
+
+split <- createDataPartition(df$CO2EMISSIONS, p = 0.8, list = FALSE)
+train <- df[split, ]
+test <- df[-split, ]
+```
+
+
+
+##Linear Regression Models
+
+##Multiple Linear Regressio Models
+
+For each predictor,the null hypothesis (H0) is:
+
+The coefficient of the predictor variable is equal to zero, meaning that the variable has no effect on CO2 emissions
+The alternative hypothesis (H1) is:
+The coefficient of the predictor variable is not equal to zero, meaning that the variable has a significant effect on CO2 emissions.
+
+```{r model-full}
+model_full_all<-lm(CO2EMISSIONS ~ ., data = train)
+summary(model_full_all)
+```
+
+When attempting to compute Variance Inflation Factors (VIFs), the full model returned an error due to aliased coefficients. This suggests the presence of multicollinearity caused by redundant or linearly dependent variables, particularly among high amount of categorical variables. To address this, we will simplify the model by removing MODEL and MAKE columns and re-evaluated VIF on the reduced model.
+
+
+Removing the MAKE,MODEL from the model:
+
+```{r model-without-make-model}
+model <- lm(CO2EMISSIONS ~ . - MODEL - MAKE, data = train)
+summary(model)
+
+```
+
+The model explains 99.1% of the variance in CO2 emissions (Adjusted R² = 0.9907), indicating excellent fit. 
+
+From the above linear model we can understand which variables are statistically significant predictors,where the p-value is smaller that the significant level a=0.05 (Pr(>|t|) < 0.05):
+
+- FUELTYPEE, FUELTYPEX, FUELTYPEZ	are strongly significant, different fuel types greatly affect CO2 emissions.
+- FUELCONSUMPTION_COMB is highly significant ,higher combined fuel consumption cause higher CO2 emissions.
+- CYLINDERS	: More cylinders generally increase CO2 emissions.
+- VEHICLECLASSVAN - PASSENGER	:Negative significant impact and tend to emit less CO2 compared to other classes.
+
+
+Coefficients of your full linear regression model:
+
+```{r yhat-model}
+Yhat= model$coefficients
+Yhat
+
+```
+
+Check for Multicollinearity:
+
+```{r vif-full}
+vif(model)
+
+```
+
+VIF analysis revealed severe multicollinearity among the fuel consumption variables (FUELCONSUMPTION_CITY, HWY, and COMB)
+
+```{r model-comb}
+model_comb <- lm(CO2EMISSIONS ~ FUELCONSUMPTION_COMB , data = train)
+summary(model_comb)
+```
+
+```{r pred-comb}
+predictions_comb<-predict(model_comb, newdata = test)
+# RMSE
+rmse_comb <- sqrt(mean((predictions_comb - test$CO2EMISSIONS)^2))
+rmse_comb
+# MAE
+mae_comb <- mean(abs(predictions_comb - test$CO2EMISSIONS))
+mae_comb
+```
+
+
+```{r model-hwy-city}
+model_hwy_city <- lm(CO2EMISSIONS ~ FUELCONSUMPTION_HWY+ FUELCONSUMPTION_CITY , data = train)
+summary(model_hwy_city)
+```
+
+```{r pred-hwy-city}
+predictions_hwy_city<-predict(model_hwy_city, newdata = test)
+# RMSE
+rmse_hwy_city <- sqrt(mean((predictions_hwy_city - test$CO2EMISSIONS)^2))
+rmse_hwy_city
+# MAE
+mae_hwy_city <- mean(abs(predictions_hwy_city - test$CO2EMISSIONS))
+mae_hwy_city
+```
+
+
+
+```{r model-comb-city}
+model_comb_city <- lm(CO2EMISSIONS ~FUELCONSUMPTION_COMB+FUELCONSUMPTION_CITY , data = train)
+summary(model_comb_city)
+```
+
+```{r model-comb-hwy}
+model_comb_hwy <- lm(CO2EMISSIONS ~FUELCONSUMPTION_COMB+FUELCONSUMPTION_HWY , data = train)
+summary(model_comb_hwy)
+```
+
+
+```{r model-no-comb}
+model_no_comb<-lm(CO2EMISSIONS~ FUELCONSUMPTION_CITY+FUELCONSUMPTION_HWY+ENGINESIZE+CYLINDERS+TRANSMISSION_TYPE+GEARS+VEHICLECLASS+FUELTYPE,data=train)
+
+summary(model_no_comb)
+```
+
+```{r pred-no-comb}
+predictions_no_comb<-predict(model_no_comb, newdata = test)
+# RMSE
+rmse_no_comb <- sqrt(mean((predictions_no_comb - test$CO2EMISSIONS)^2))
+rmse_no_comb
+# MAE
+mae_no_comb <- mean(abs(predictions_no_comb - test$CO2EMISSIONS))
+mae_no_comb
+```
+
+```{r vif-no-comb}
+vif(model_no_comb)
+```
+
+```{r model-no-hwy-city}
+model_no_hwy_city <-lm(CO2EMISSIONS~FUELCONSUMPTION_COMB+ENGINESIZE+CYLINDERS+TRANSMISSION_TYPE+GEARS+VEHICLECLASS+FUELTYPE,data=train)
+summary(model_no_hwy_city)
+```
+
+Statistically Significant Variables (p-value < 0.05) that have a strong relationship with CO2EMISSIONS:
+
+- FUELCONSUMPTION_COMB:	p<2e-16	:Strong positive effect on CO2 emissions. For each combined fuel consumption, CO2 emissions increase by ~21.32 g/km.
+- CYLINDERS	: p<0.000713 . More cylinders are associated with higher emissions.
+- VEHICLECLASSVAN - CARGO	p=0.020014 .Vans (cargo) are associated with lower CO2 emissions compared to the reference class.
+- VEHICLECLASSVAN - PASSENGER	: p=0.000109 Strong negative association, these vehicles emit significantly less CO2 .
+- FUELTYPEE	:	p< 2e-16.Very strong negative effect. Likely electric vehicles or alternative fuel type.
+- FUELTYPEX	:	p< 2e-16 .Significant negative association with emissions.
+- FUELTYPEZ	:	p< 2e-16 .Significant negative association with emissions.
+
+```{r pred-no-hwy-city}
+predictions_no_hwy_city<-predict(model_no_hwy_city, newdata = test)
+# RMSE
+rmse_no_hwy_city<- sqrt(mean((predictions_no_hwy_city - test$CO2EMISSIONS)^2))
+rmse_no_hwy_city
+# MAE
+mae_no_hwy_city <- mean(abs(predictions_no_hwy_city - test$CO2EMISSIONS))
+mae_no_hwy_city
+```
+
+```{r vif-no-hwy-city}
+vif(model_no_hwy_city)
+```
+Because hwy and city are significant then we will use the model with highway and city and remove comb due to multicollinearity.
+
+```{r model-no-comb-hwy}
+model_no_comb_hwy <-lm(CO2EMISSIONS~FUELCONSUMPTION_CITY+ENGINESIZE+CYLINDERS+TRANSMISSION_TYPE+GEARS+VEHICLECLASS+FUELTYPE,data=train)
+summary(model_no_comb_hwy)
+```
+
+```{r pred-no-comb-hwy}
+predictions_no_comb_hwy<-predict(model_no_comb_hwy, newdata = test)
+# RMSE
+rmse_no_comb_hwy<- sqrt(mean((predictions_no_comb_hwy - test$CO2EMISSIONS)^2))
+rmse_no_hwy_comb
+# MAE
+mae_no_comb_hwy<- mean(abs(predictions_no_comb_hwy- test$CO2EMISSIONS))
+mae_no_comb_hwy
+```
+
+```{r model-no-city}
+model_no_city <-lm(CO2EMISSIONS~FUELCONSUMPTION_COMB+FUELCONSUMPTION_HWY+ENGINESIZE+CYLINDERS+TRANSMISSION_TYPE+GEARS+VEHICLECLASS+FUELTYPE,data=train)
+summary(model_no_city)
+```
+
+```{r pred-no-hwy-comb}
+predictions_no_city<-predict(model_no_city, newdata = test)
+# RMSE
+rmse_no_city<- sqrt(mean((predictions_no_city - test$CO2EMISSIONS)^2))
+rmse_no_city
+# MAE
+mae_no_city<- mean(abs(predictions_no_city- test$CO2EMISSIONS))
+mae_no_city
+```
+
+```{r vif-no-city}
+vif(model_no_city)
+
+```
+
+```{r anova-comb-hwy-city}
+anova(model_no_comb,model_no_hwy_city)
+```
+
+```{r model-no-comb-hwy}
+model_no_city <- lm(CO2EMISSIONS~FUELCONSUMPTION_COMB+FUELCONSUMPTION_HWY+ENGINESIZE+CYLINDERS+TRANSMISSION_TYPE+GEARS+VEHICLECLASS+FUELTYPE,data=train)
+summary(model_no_city)
+```
+```{r pred-no-hwy-city}
+predictions_no_city<-predict(model_no_city, newdata = test)
+# RMSE
+rmse_no_city<- sqrt(mean((predictions_no_city - test$CO2EMISSIONS)^2))
+rmse_no_city
+# MAE
+mae_no_city <- mean(abs(predictions_no_city - test$CO2EMISSIONS))
+mae_no_city
+```
+
+```{r comparison-models}
+
+# Compute VIFs
+vif_comb <- max(vif(model_no_hwy_city))
+vif_city_hwy <- max(vif(model_no_comb))
+vif_no_city <- max(vif(model_no_city))
+vif_no_comb_hwy <- max(vif(model_no_comb_hwy))
+
+model_comparison <- data.frame(
+  
+  Model = c("model_no_comb", "model_no_city", "model_no_comb_hwy", "model_no_hwy_city"),
+  RMSE = c(rmse_no_comb, rmse_no_city, rmse_no_comb_hwy, rmse_no_hwy_city),
+  MAE = c(mae_no_comb, mae_no_city, mae_no_comb_hwy, mae_no_hwy_city),
+  Adjusted_R2 = c(
+    summary(model_no_comb)$adj.r.squared,
+    summary(model_no_city)$adj.r.squared,
+    summary(model_no_comb_hwy)$adj.r.squared,
+    summary(model_no_hwy_city)$adj.r.squared),
+  VIF = c(vif_comb, vif_city_hwy, vif_no_city, vif_no_comb_hwy)
+)
+
+print(model_comparison)
+```
+
+We will choose the model with only FUELCOSUMPTION_COMB ("model_no_hwy_city") from the 3 categories of fuel consumption as out final model to avoid multicollinearity.
+
+We also choose model_no_hwy_city because it has:
+- Lowest MAE: 3.07 ,best average prediction error.
+- Great RMSE: 5.91 ,same as model_no_comb, but with better multicollinearity.
+- Acceptable multicollinearity: All VIFs are under 5, which is within acceptable limits.
+- Adjusted R² is excellent (0.9900).
+
+##Best Subset Selection
+
+```{r reg-full}
+bss=regsubsets(CO2EMISSIONS~.-MODEL-MAKE, data=train)
+bss.summary<-summary(bss) 
+bss.summary
+```
+
+Best Mj models with j size:
+
+**M1**: FUELCONSUMPTION_CITY
+**M2**: FUELCONSUMPTION_COMB, FUELTYPEE
+**M3**: FUELCONSUMPTION_COMB, FUELTYPEE, CYLINDERS
+**M4**: FUELCONSUMPTION_COMB, FUELTYPEE, FUELTYPEX, FUELTYPEZ
+**M5**: FUELCONSUMPTION_COMB, FUELTYPEE, FUELTYPEX, FUELTYPEZ, VEHICLECLASSVAN - PASSENGER
+**M6**: FUELCONSUMPTION_COMB, FUELTYPEE, FUELTYPEX, FUELTYPEZ, VEHICLECLASSVAN - PASSENGER, CYLINDERS
+**M7**: FUELCONSUMPTION_COMB, FUELTYPEE, FUELTYPEX, FUELTYPEZ, VEHICLECLASSVAN - PASSENGER, CYLINDERS, VEHICLECLASSVAN - CARGO
+**M8**: FUELCONSUMPTION_COMB, FUELTYPEE, FUELTYPEX, FUELTYPEZ, VEHICLECLASSVAN - PASSENGER, CYLINDERS, VEHICLECLASSVAN - CARGO, TRANSMISSION_TYPECVT
+
+
+
+Most Frequently Selected Variables :
+
+- FUELTYPEE, FUELTYPEX, FUELTYPEZ :included in nearly every model starting from 2 variables onwards. These are highly significant in all your previous models too.
+- FUELCONSUMPTION_COMB :appears in almost all subsets (2–10), indicating it’s a strong predictor of CO₂ emissions.
+- CYLINDERS :included in the 3-variable subset and beyond.
+- VEHICLECLASSVAN - PASSENGER and FUELCONSUMPTION_HWY – selected in larger subsets, suggesting added explanatory power when more variables are allowed.
+
+Rarely or Never Selected:
+
+- Transmission type variables are not selected at all. This supports what you saw earlier that they are not statistically significant predictors.
+- GEARS is never selected, reinforcing earlier findings that it has little predictive value.
+- ENGINE SIZE also not selected in any model.
+
+```{r rsq}
+bss.summary$rsq
+which.max(bss.summary$adjr2)
+```
+
+
+```{r plots-cp-ar2-rss-bic}
+par(mfrow=c(2,2)) 
+
+plot(bss.summary$rss, xlab="Number of Variables", ylab="SSres", type="l") 
+K0=which.min(bss.summary$rss) 
+points(K0, bss.summary$rss[K0], col="red",cex=2,pch=20)
+
+plot(bss.summary$adjr2,xlab="Number of Variables", ylab="Adjusted RSq", type="l") 
+K1=which.max(bss.summary$adjr2) 
+points(K1, bss.summary$adjr2[K1], col="red",cex=2,pch=20)
+
+plot(bss.summary$cp,xlab="Number of Variables", ylab="C_p", type="l")
+K2=which.min(bss.summary$cp) 
+points(K2, bss.summary$cp[K2], col="red",cex=2,pch=20)
+
+plot(bss.summary$bic,xlab="Number of Variables", ylab="BIC", type="l") 
+K3=which.min(bss.summary$bic) 
+points(K3, bss.summary$bic[K3], col="red",cex=2,pch=20)
+```
+
+The best subset selection plots guided our decision on the optimal number of predictors for modeling CO₂ emissions. All plots consistently show that the best model statistically has 8 variables.However, models with 4–6 variables achieve almost the same performance and easier to interpret
+
+
+
+```{r bss-r2}
+
+plot(bss, scale = "r2")
+
+```
+
+```{r bss-cp}
+
+plot(bss, scale = "Cp")
+```
+
+
+```{r bss-adjr2}
+plot(bss, scale = "adjr2")
+```
+
+```{r bss-bic}
+plot(bss, scale = "bic")
+```
+
+From the plots above we comfirm that the final selected model includes 8 key predictors that offer a strong balance between accuracy and simplicity. It demonstrates excellent predictive performance, avoids multicollinearity issues and captures the most important factors influencing CO2 emissions.
+
+
+## Final Model
+
+```{r final-model}
+
+final_model <- lm(CO2EMISSIONS ~ FUELCONSUMPTION_COMB + CYLINDERS + 
+                    FUELTYPE + VEHICLECLASS, data = train)
+
+summary(final_model)
+
+pred_final <- predict(final_model, newdata = test)
+rmse_final <- sqrt(mean((pred_final - test$CO2EMISSIONS)^2))
+mae_final <- mean(abs(pred_final - test$CO2EMISSIONS))
+
+rmse_final
+mae_final
+```
+
+This model is a strong final choice because it balances high accuracy (Adjusted R² = 0.99, RMSE ≈ 6.0) and interpretability with only a few highly predictive variables.
+The multicollinearity now is reduced by keeping FUELCONSUMPTION_COMB instead of also including CITY and HWY.
+```{r final-coef}
+coef(bss, 8)
+```
+**Multiple linear regression equation**
+
+CO2EMISSIONS=38.6962−6.6254⋅VAN_CARGO−10.5495⋅VAN_PASSENGER+1.3327⋅CYLINDERS−150.1926⋅FUELTYPEE−31.0720⋅FUELTYPEX−31.8550⋅FUELTYPEZ+21.6932⋅FUELCONSUMPTION_COMB−2.7395⋅TRANSMISSION_CVT
+
+```{r plot-residuals}
+par(mfrow = c(2, 2))
+plot(final_model)
+```
+
+To examinate the assumptions of linear regression, diagnostic plots were generated for the final model. The Residuals vs Fitted plot shows that residuals are very close to zero for most fitted values (especially between 200 and 300), suggesting the model fits the training data extremely well and showing linearity. The Q-Q plot shows that most residuals lie along the 45-degree line, indicating that residuals are approximately normally distributed, with a few moderate outliers at both tails. The Scale-Location plot appears relatively flat. Lastly, the Residuals vs Leverage plot does not highlight any influential observations with high leverage or extreme standardized residuals.
+
+##Forward Stepwise Selection
+
+```{r reg-fwd}
+regfit.fwd <- regsubsets(CO2EMISSIONS ~ .-MAKE-MODEL, data = train,
+    method = "forward")
+summary(regfit.fwd)
+
+```
+
+To identify the most significant predictors of CO2 emissions, we applied forward selection, a stepwise regression method that starts with an empty model(with 0 variables) and progressively adds variables. At each step, the variable that results in the greatest improvement to the model's performance—based on criteria such as the adjusted R² is included. This process continues until no additional variables significantly improve the model.
+
+##Backward Stepwise Selection
+
+```{r reg-back}
+regfit.bwd <- regsubsets(CO2EMISSIONS ~ .-MODEL-MAKE, data = train, method = "backward")
+summary(regfit.bwd)
+```
+
+Backward selection is a variable selection technique that starts with the full model, including all potential predictors and then removes variables one by one based on their statistical insignificance , until the optimal subset of predictors is identified.Across all 8 model sizes, certain variables consistently appeared in the selected subsets:FUELCONSUMPTION_COMB ,FUELTYPEE, FUELTYPEX, FUELTYPEZ,CYLINDERS ,VEHICLECLASSVAN - PASSENGER, PICKUP TRUCK - STANDARD.
+
+##Choosing Among Models Using the Validation-Set Approach and Cross-Validation
+
+```{r validation}
+# Fit best subsets on training set
+set.seed(1)
+train_idx <- sample(c(TRUE, FALSE), nrow(train), rep=TRUE)
+test_idx <- (!train_idx)
+
+regfit.full <- regsubsets(CO2EMISSIONS ~ . -MODEL -MAKE, data = train[train_idx, ], nvmax = 20)
+
+# Create model matrix
+test.mat <- model.matrix(CO2EMISSIONS ~ . -MODEL -MAKE, data = train[test_idx, ])
+
+# Validation errors
+val.errors <- rep(NA, 20)
+for (i in 1:20) {
+  coefi <- coef(regfit.full, id = i)
+  pred <- test.mat[, names(coefi)] %*% coefi
+  val.errors[i] <- mean((train$CO2EMISSIONS[test_idx] - pred)^2)
+}
+
+plot(val.errors, type = "b", xlab = "Number of Variables", ylab = "Validation Set MSE", main = "Validation Set Approach")
+```
+
+```{r min-val-error}
+which.min(val_errors)  # returns the number of variables with lowest error
+
+```
+
+According to the validation set approach, the model with 15 predictors has the lowest validation set mean squared error (MSE)
+
+
+```{r cross-validation}
+predict.regsubsets <- function(object, newdata, id, ...) {
+  form <- as.formula(object$call[[2]])
+  mat <- model.matrix(form, newdata)
+  coefi <- coef(object, id = id)
+  vars <- names(coefi)
+  
+  # Keep only columns that exist in mat and coefi
+  matched_vars <- intersect(vars, colnames(mat))
+  
+  # Include intercept manually if it's present
+  if ("(Intercept)" %in% vars) {
+    result <- coefi["(Intercept)"] + mat[, matched_vars, drop = FALSE] %*% coefi[matched_vars]
+  } else {
+    result <- mat[, matched_vars, drop = FALSE] %*% coefi[matched_vars]
+  }
+  
+  return(as.vector(result))
+}
+
+
+k <- 10
+set.seed(1)
+folds <- sample(1:k, nrow(train), replace = TRUE)
+cv_errors <- matrix(NA, k, 8)
+
+for (j in 1:k) {
+  best.fit <- regsubsets(CO2EMISSIONS ~ . - MODEL - MAKE, 
+                         data = train[folds != j, ], nvmax = 8)
+  for (i in 1:8) {
+    pred <- predict.regsubsets(best.fit, train[folds == j, ], id = i)
+    cv_errors[j, i] <- mean((train$CO2EMISSIONS[folds == j] - pred)^2)
+  }
+}
+
+mean_cv_errors <- colMeans(cv_errors)
+which.min(mean_cv_errors)  # best model size
+
+```
+
+The k-fold cross-validation procedure identified the model with 3 predictors as the one with the lowest average cross-validation error. This result favors a simpler model, likely reducing overfitting while maintaining strong predictive accuracy. Compared to the validation set approach, which favored a larger model, cross-validation provides a more robust estimate by averaging over multiple folds, reinforcing the benefit of model simplicity.
+
+The validation set approach selected a model with 15 predictors, indicating that this more complex model fit the specific split of the data well. However, k-fold cross-validation selected a simpler model with only 3 predictors, suggesting that the simpler model generalizes better across different data splits. This reinforces the importance of cross-validation for more stable and reliable model selection.
+
+```{r best-regfit}
+
+best.regfit <- regsubsets(CO2EMISSIONS ~ . - MODEL - MAKE, data = train, nvmax = 8)
+best.summary <- summary(best.regfit)
+
+# Get variable names for the model with 3 predictors
+best.vars <- names(coef(best.regfit, id = 3))[-1]  # Remove intercept
+print(best.vars)
+```
+
+```{r best-model-cv}
+bestcv.model <- lm(CO2EMISSIONS ~ FUELCONSUMPTION_COMB + CYLINDERS + FUELTYPE, data = train)
+
+
+summary(bestcv.model)
+```
+
+
+```{r bestcv-evaluate}
+predictions <- predict(bestcv.model, newdata = test)
+
+# Evaluate performance
+rmse <- sqrt(mean((predictions - test$CO2EMISSIONS)^2))
+mae <- mean(abs(predictions - test$CO2EMISSIONS))
+
+cat("RMSE:", rmse, "\n")
+cat("MAE:", mae, "\n")
+```
+
+Using the validation or cross-validation approach, the best model included 3 predictors. After fitting this model on the training set and evaluating it on the test set, we obtained the following performance metrics:
+Root Mean Squared Error (RMSE): 6.40
+Mean Absolute Error (MAE): 3.49
+These values indicate that, on average, the predicted CO₂ emissions deviate by about 3.49 g/km from the true values and larger deviations are still well-controlled within a standard error of 6.40 g/km.
+
+
+## Ridge Regression
+
+```{r train-test}
+train$source <- "train"
+test$source <- "test"
+
+full_data <- rbind(train, test)
+
+x.full <- model.matrix(CO2EMISSIONS ~ . - MODEL - MAKE - source, data = full_data)[, -1]
+
+x.train <- x.full[full_data$source == "train", ]
+x.test  <- x.full[full_data$source == "test", ]
+
+y.train <- train$CO2EMISSIONS
+y.test <- test$CO2EMISSIONS
+
+```
+
+```{r ridge}
+
+# alpha = 0 for Ridge Regression
+ridge_model <- glmnet(x.train, y.train, alpha = 0)
+plot(ridge_model, xvar = "lambda", label = TRUE)
+
+```
+
+```{r cv-ridge}
+cv_ridge <- cv.glmnet(x.train, y.train, alpha = 0)
+plot(cv_ridge)
+```
+```{r best-lambda-ridge}
+# Best lambda
+best_lambda <- cv_ridge$lambda.min
+best_lambda
+```
+
+The plot above represents the cross-validation MSE across various values of the penalty parameter λ for ridge regression. The minimum MSE is observed at λ = 5.7378, indicating this value provides the best bias-variance tradeoff. This λ was selected for the final ridge model, offering improved generalization performance through effective shrinkage of coefficient estimates.
+
+
+```{r test-ridge}
+
+ridge.pred <- predict(cv.ridge, s = best_lambda, newx = x.test)
+rmse_ridge <- sqrt(mean((ridge.pred - y.test)^2))
+mae_ridge <- mean(abs(ridge.pred - y.test))
+
+cat("RMSE:", rmse_ridge, "\nMAE:", mae_ridge)
+```
+
+The Ridge regression model was applied to predict CO2EMISSIONS using all 28 predictors with regularization.The optimal regularization parameter (lambda) selected via cross-validation was approximately 5.74.Ridge achieved the following on the test set:
+RMSE: 9.04
+MAE: 6.87
+Although Ridge regression is designed to reduce the impact of multicollinearity by reducing coefficients, its prediction performance was worse than that of the standard linear regression models (which had RMSE ≈ 5.9–6.4).
+This means that,while multicollinearity existed, it did not strongly affect model prediction accuracy, or
+Ridge led to underfitting in this case.
+
+
+### Lasso Regression
+
+
+```{r lasso}
+
+lasso.model <- glmnet(x.train, y.train, alpha = 1)
+  # alpha = 1 → Lasso
+
+plot(lasso.model, xvar = "lambda", label = TRUE)
+
+```
+
+```{r lasso-cv}
+cv.lasso <- cv.glmnet(x.train, y.train, alpha = 1)
+plot(cv.lasso)
+```
+
+```{r lambda-lasso}
+best_lambda_lasso <- cv.lasso$lambda.min
+best_lambda_lasso
+```
+
+```{r evaluate-lasso}
+
+lasso.pred <- predict(cv.lasso, s = best_lambda_lasso, newx = x.test)
+
+# RMSE
+rmse_lasso <- sqrt(mean((lasso.pred - y.test)^2))
+
+# MAE
+mae_lasso <- mean(abs(lasso.pred - y.test))
+cat("RMSE:", rmse_lasso, "\nMAE:", mae_lasso)
+```
+
+The Lasso regression model gave us very good results, with RMSE = 5.87 and MAE = 3.18. This means it predicts CO2 emissions accurately. The best value for the tuning parameter λ was 0.0444 and this helped the model focus only on the most important variables. Lasso automatically removed some less useful variables by setting their coefficients to zero, which made the model simpler and easier to understand. This is especially helpful because we had multicollinearity and Lasso helped solve that problem. Among all the models we tried, Lasso gave the lowest errors, so it’s likely the best one for our data.
+
+
+
+```{r coef-lasso}
+coef(cv.lasso, s = best_lambda_lasso)
+```
+
+Lasso kept most vehicle classes, but removed a few like "STATION WAGON - MID-SIZE", "STATION WAGON - SMALL", "TWO-SEATER", "VAN - CARGO" and some transmission types like "Automatic" and also "GEARS".
+It kept strong predictors like:
+FUELCONSUMPTION_COMB (15.79)
+FUELTYPEE (very large negative impact: -143.21)
+CYLINDERS (1.33) and ENGINESIZE (0.37)
+VEHICLECLASSPICKUP TRUCK - SMALL (5.13), which means small pickup trucks increase emissions.
+This confirms that Lasso helps solve multicollinearity by  removing variables that are redundant.
+
+
+
+## PCR
+
+```{r pcr-plot}
+
+# Run PCR with cross-validation
+pcr_model <- pcr(y.train ~ x.train, scale = TRUE, validation = "CV")
+
+# Plot cross-validation error
+validationplot(pcr_model, val.type = "MSEP", main = "PCR Validation - MSEP")
+```
+
+```{r pcr-evaluation}
+# Select optimal number of components
+ncomp_pcr <- which.min(pcr_model$validation$PRESS)
+ncomp_pcr
+# Predict on test data
+pcr_pred <- predict(pcr_model, newdata = x.test, ncomp = ncomp_pcr)
+
+# Evaluation metrics
+rmse_pcr <- sqrt(mean((pcr_pred - y.test)^2))
+mae_pcr <- mean(abs(pcr_pred - y.test))
+
+cat("PCR RMSE:",rmse_pcr,"\nPCR MAE:", mae_pcr )
+
+```
+
+The PCR model gave good results, with an RMSE of 5.88 and MAE of 3.06, meaning the predicted CO2 emissions were quite close to the real values. According to the plot, the optimal number of components is 28, which gave the lowest error. This shows that PCR used all available components to capture most of the variation in the data. PCR was especially helpful because it reduced the risk of multicollinearity by using combinations of the original variables. Overall, PCR provided a stable and reliable model for predicting CO2 emissions in this dataset.
+
+
+
+## Partial Least Squares (PLS) Regression
+
+```{r PLS-plot}
+
+# Run PLS with cross-validation
+pls_model <- plsr(y.train ~ x.train, scale = TRUE, validation = "CV")
+
+# Plot cross-validation error
+validationplot(pls_model, val.type = "MSEP", main = "PLS Validation - MSEP")
+```
+
+```{r pls-evaluate}
+# Select optimal number of components
+ncomp_pls <- which.min(pls_model$validation$PRESS)
+ncomp_pls
+# Predict on test data
+pls_pred <- predict(pls_model, newdata = x.test, ncomp = ncomp_pls)
+
+# Evaluation metrics
+rmse_pls <- sqrt(mean((pls_pred - y.test)^2))
+mae_pls <- mean(abs(pls_pred - y.test))
+
+cat("PLS RMSE:", round(rmse_pls, 3), "\nPLS MAE:", round(mae_pls, 3), "\n")
+```
+
+The Partial Least Squares (PLS) model achieved good predictive accuracy, with an RMSE of 5.88 and MAE of 3.06 on the test data. According to the validation plot, the optimal number of components is 26, which gave the lowest prediction error. The MSEP dropped sharply at the beginning and stabilized afterward, showing that most of the important information is captured within these components. Since PLS considers both the predictors and the target variable when creating components, it handles multicollinearity well and builds more efficient models compared to PCR. Overall, PLS provided a solid and effective prediction model for CO2 emissions in this dataset.
+
+
+
+
+
+
