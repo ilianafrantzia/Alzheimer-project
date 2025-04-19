@@ -1,0 +1,524 @@
+---
+title: "classification"
+author: "Eleni Yiasoumi, Iliana Frantzia, Marios Christodoulou"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Import Libraries
+```{r libraries,echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(moments)
+library(nortest)
+library(corrplot)
+library(caret)
+library(tidyr)
+library(glmnet)
+library(pROC)
+```
+
+```{r seed}
+set.seed(1)
+```
+
+### LOADING DATA AND INITIAL CLEANING
+```{r load-data, message=FALSE}
+data <- read.csv("alzheimers_prediction_dataset.csv")
+head(data)
+```
+
+```{r STR}
+str(data)
+```
+
+```{r SUMMARY}
+summary(data)
+```
+
+```{r missing values count}
+# Total number of missing values in the dataset
+sum(is.na(data))
+```
+```{r duplicated rows}
+# Number of duplicated rows
+sum(duplicated(data))
+```
+
+```{r unique values}
+# Check unique values for categorical columns
+cat_cols <- names(data)[sapply(data, is.character)]
+
+# Apply unique() to each categorical column and name the output
+unique_values <- lapply(data[cat_cols], unique)
+
+# Display the unique values nicely
+unique_values
+```
+
+```{r turn to factor}
+data <- data %>%
+  mutate(across(where(is.character), as.factor))
+```
+
+```{r rename target variable}
+# Rename the column from "Alzheimer.s.Diagnosis" to "Diagnosis"
+names(data)[names(data) == "Alzheimer.s.Diagnosis"] <- "Diagnosis"
+```
+
+We are going to relevel the target variable because we want "Yes" to be treated as the positive class in the model evaluation. 
+```{r relevel target variable}
+# Make sure it's a factor with proper levels
+data$Diagnosis <- factor(data$Diagnosis, levels = c("No", "Yes"))
+
+# Set "No" as reference so "Yes" is treated as the positive class
+data$Diagnosis <- relevel(data$Diagnosis, ref = "No")
+```
+
+
+### EDA
+
+Here will be all the plots of the variables and all the plots for exploring the relationship between our target variable and the other features. Also we will create correlation plot between the numeric features and point-biserial correlation for numeric columns vs binary target variable.
+
+From this section we should be able to :
+- Understand the distributions
+- Spot outliers or weird values
+- Visualize class imbalance
+- Identify skewness or strong correlations
+
+This step informs our decisions on scaling, encoding, feature engineering, and modeling.
+
+
+### VARIABLE SELECTION
+
+### TRAIN/TEST SPLIT
+
+```{r split dataset}
+train_index <- createDataPartition(data$Diagnosis, p = 0.8, list = FALSE)
+
+train_data <- data[train_index, ]
+test_data  <- data[-train_index, ]
+```
+
+-------------------------------------------------
+### Logistic Regression with Stepwise Selection
+
+```{r log regre with stepwise selection}
+model <- glm(Diagnosis ~ ., data = train_data, family = binomial)
+step(model)
+```
+
+So what are these results telling us? The most important features for our model are:
+- Urban.vs.Rural.Living
+- Air.Pollution.Exposure
+- Income.Level
+- Country
+- Family.History.of.Alzheimer.s 
+- Genetic.Risk.Factor..APOE.ε4.allele.
+- Age
+
+The stepwise selection model tried to minimize the AIC and having a low AIC means that our model performs the best with the according features. Also from the results above we can conclude that Genetic.Risk.Factor..APOE.ε4.allele.Yes has a strong positive effect. Moreover, Age and family history also have positive effects — older people and those with family history are at greater risk. Variables like Income Level and Air Pollution stayed in, but with small coefficients — they still helped explain some variance.
+
+```{r code evaluation for the above model}
+# Make predictions on test set
+predicted_probs <- predict(model, newdata = test_data, type = "response")
+
+# Classify based on a 0.5 threshold
+predicted_classes <- ifelse(predicted_probs > 0.5, "Yes", "No")
+
+# Confusion Matrix
+confusionMatrix(factor(predicted_classes), factor(test_data$Diagnosis), positive = "Yes")
+
+# AUC
+roc_obj <- roc(test_data$Diagnosis, predicted_probs)
+auc(roc_obj)
+```
+
+Our model achieved an accuracy of about 71.7%, with a balanced accuracy of 70%, and an AUC of ~0.79. This suggests the model has a decent ability to distinguish between patients with and without Alzheimer’s. While it performs better at identifying non-Alzheimer’s cases , it is less specific for detecting actual Alzheimer’s cases. The model significantly outperforms baseline guessing and shows moderate overall predictive agreement.
+
+We will explore further the threshold by creating the plot of Sensitivity & Specificity vs Threshold.
+```{r plot for threshold}
+# Create a range of thresholds to evaluate
+thresholds <- seq(0.1, 0.9, by = 0.01)
+
+# Create a dataframe to store results
+threshold_results <- data.frame(Threshold = thresholds,
+                                 Sensitivity = NA,
+                                 Specificity = NA)
+
+# Loop through each threshold and compute confusion matrix stats
+for (i in seq_along(thresholds)) {
+  t <- thresholds[i]
+  
+  predicted_class <- ifelse(predicted_probs > t, "Yes", "No")
+  predicted_class <- factor(predicted_class, levels = c("No", "Yes"))
+  
+  cm <- confusionMatrix(predicted_class, test_data$Diagnosis, positive = "Yes")
+  
+  threshold_results$Sensitivity[i] <- cm$byClass["Sensitivity"]
+  threshold_results$Specificity[i] <- cm$byClass["Specificity"]
+}
+
+# Plot
+ggplot(threshold_results, aes(x = Threshold)) +
+  geom_line(aes(y = Sensitivity), color = "blue", size = 1.2) +
+  geom_line(aes(y = Specificity), color = "red", size = 1.2) +
+  labs(title = "Sensitivity & Specificity vs Threshold",
+       y = "Value", x = "Threshold") +
+  theme_minimal() +
+  geom_vline(xintercept = 0.5, linetype = "dashed", color = "gray") +
+  annotate("text", x = 0.5, y = 0.5, label = "Default threshold = 0.5", vjust = -1)
+```
+
+Find Optimal Threshold Using ROC (Youden's Index)
+This automatically finds the threshold that maximizes (Sensitivity + Specificity − 1).
+```{r find optimal threshold}
+# Create ROC object
+roc_obj <- roc(test_data$Diagnosis, predicted_probs)
+
+# Get threshold that maximizes Youden’s Index
+optimal_coords <- coords(roc_obj, x = "best", best.method = "youden", transpose = FALSE)
+
+# View optimal threshold
+optimal_coords
+```
+
+The next step is to apply the optimal threshold to our analysis:
+```{r apply new threshold}
+# Use the optimal threshold from above
+optimal_threshold <- as.numeric(optimal_coords["threshold"])
+
+# Apply it
+final_pred_classes <- ifelse(predicted_probs > optimal_threshold, "Yes", "No")
+final_pred_classes <- factor(final_pred_classes, levels = c("No", "Yes"))
+
+# New confusion matrix
+confusionMatrix(final_pred_classes, test_data$Diagnosis, positive = "Yes")
+```
+
+By tuning the threshold, you’ve boosted sensitivity from ~61% (at 0.5) to ~83%, which means your model is now much better at identifying Alzheimer’s patients. While specificity decreased a bit (from ~79% to ~63%), this is a common and acceptable trade-off when detecting the positive class (Alzheimer's) is more important than avoiding false positives.
+
+To enhance the model’s ability to detect Alzheimer’s cases, we tuned the classification threshold using the ROC curve and Youden’s Index, identifying an optimal cutoff that balances sensitivity and specificity. At this new threshold, the model achieved an accuracy of 71.0%, a sensitivity of 82.5%, and a specificity of 62.9%. This reflects a deliberate trade-off: the model now correctly identifies the majority of Alzheimer’s patients, which is often more critical in medical settings than avoiding false positives. The AUC of 0.7975 indicates strong overall classification ability, and the balanced accuracy of 72.7% supports the model’s reliability across both classes. These results demonstrate the effectiveness of threshold tuning for improving clinical sensitivity.
+
+
+We will repeat the above process by using only the most important features, which we got from the stepwise selection
+```{r glm with important features}
+model_2 <- glm(Diagnosis ~ `Urban.vs.Rural.Living`+ `Air.Pollution.Exposure`+ `Income.Level`+ Country + `Family.History.of.Alzheimer.s`+ `Genetic.Risk.Factor..APOE.ε4.allele.`+ Age, data = train_data, family = binomial)
+```
+
+```{r predictions for model2}
+# Make predictions on test set
+predicted_probs_2 <- predict(model_2, newdata = test_data, type = "response")
+
+# Classify based on a 0.5 threshold
+predicted_classes_2 <- ifelse(predicted_probs_2 > 0.5, "Yes", "No")
+
+# Confusion Matrix
+confusionMatrix(factor(predicted_classes_2), factor(test_data$Diagnosis), positive="Yes")
+
+# AUC
+roc_obj_2 <- roc(test_data$Diagnosis, predicted_probs_2)
+auc(roc_obj_2)
+```
+
+```{r plot for threshold for model2}
+# Create a range of thresholds to evaluate
+thresholds_2 <- seq(0.1, 0.9, by = 0.01)
+
+# Create a dataframe to store results
+threshold_results_2 <- data.frame(Threshold = thresholds_2,
+                                 Sensitivity = NA,
+                                 Specificity = NA)
+
+# Loop through each threshold and compute confusion matrix stats
+for (i in seq_along(thresholds_2)) {
+  t <- thresholds_2[i]
+  
+  predicted_class_2 <- ifelse(predicted_probs_2 > t, "Yes", "No")
+  predicted_class_2 <- factor(predicted_class_2, levels = c("No", "Yes"))
+  
+  cm <- confusionMatrix(predicted_class_2, test_data$Diagnosis, positive = "Yes")
+  
+  threshold_results_2$Sensitivity[i] <- cm$byClass["Sensitivity"]
+  threshold_results_2$Specificity[i] <- cm$byClass["Specificity"]
+}
+
+# Plot
+ggplot(threshold_results_2, aes(x = Threshold)) +
+  geom_line(aes(y = Sensitivity), color = "blue", size = 1.2) +
+  geom_line(aes(y = Specificity), color = "red", size = 1.2) +
+  labs(title = "Sensitivity & Specificity vs Threshold",
+       y = "Value", x = "Threshold") +
+  theme_minimal() +
+  geom_vline(xintercept = 0.5, linetype = "dashed", color = "gray") +
+  annotate("text", x = 0.5, y = 0.5, label = "Default threshold = 0.5", vjust = -1)
+```
+
+```{r find optimal threshold_2}
+# Create ROC object
+roc_obj_2 <- roc(test_data$Diagnosis, predicted_probs_2)
+
+# Get threshold that maximizes Youden’s Index
+optimal_coords_2 <- coords(roc_obj_2, x = "best", best.method = "youden", transpose = FALSE)
+
+# View optimal threshold
+optimal_coords_2
+```
+
+```{r apply new threshold_2}
+# Use the optimal threshold from above
+optimal_threshold_2 <- as.numeric(optimal_coords_2["threshold"])
+
+# Apply it
+final_pred_classes_2 <- ifelse(predicted_probs_2 > optimal_threshold_2, "Yes", "No")
+final_pred_classes_2 <- factor(final_pred_classes_2, levels = c("No", "Yes"))
+
+# New confusion matrix
+confusionMatrix(final_pred_classes_2, test_data$Diagnosis, positive = "Yes")
+```
+
+We observe that the sensitivity in this case slightly improves to 83.03%.
+-------------------------------------------------
+
+
+### RESAMPLING
+
+Upsample the training set only.
+```{r resampling}
+upsampled_train <- upSample(x = train_data[, -ncol(train_data)],
+                             y = as.factor(train_data$Diagnosis),
+                             yname = "Alzheimer")
+```
+
+### SCALING
+
+```{r scaling}
+# Scaling on upsampled training data
+scaling_model <- preProcess(upsampled_train[, -ncol(upsampled_train)], method = c("center", "scale"))
+scaled_train <- predict(scaling_model, upsampled_train[, -ncol(upsampled_train)])
+
+# Apply same scaling to test set
+scaled_test <- predict(scaling_model, test_data[, -ncol(test_data)])
+
+# Add back target column
+train_final <- data.frame(scaled_train, Diagnosis = upsampled_train$Alzheimer)
+test_final  <- data.frame(scaled_test, Diagnosis = test_data$Diagnosis)
+
+```
+
+### APPLY MODEL_2 FOR THE RESAMPLED AND SCALED DATASET 
+
+Find new optimal threshold
+```{r threshold for final dataset and model 2}
+# Predict probabilities
+train_final_probs <- predict(model_2, newdata = train_final, type = "response")
+
+#Find optimal threshold
+roc_obj <- roc(train_final$Diagnosis, train_final_probs)
+coords(roc_obj, x = "best", best.method = "youden")
+
+#use new threshold
+optimal_threshold <- as.numeric(coords(roc_obj, x = "best", best.method = "youden")["threshold"])
+```
+
+
+```{r prediction for final model}
+# Make sure Diagnosis is a factor with the right levels
+train_final$Diagnosis <- factor(train_final$Diagnosis, levels = c("No", "Yes"))
+
+# Apply optimal threshold to get predicted classes
+train_final_pred <- ifelse(train_final_probs > optimal_threshold, "Yes", "No")
+train_final_pred <- factor(train_final_pred, levels = c("No", "Yes"))
+
+# Confusion matrix
+confusionMatrix(train_final_pred, train_final$Diagnosis, positive = "Yes")
+```
+
+After tuning the classification threshold based on the distribution of predicted probabilities, the logistic regression model was applied to the upsampled and scaled training data. The model achieved an accuracy of 63.6%, with a sensitivity of 64.0% and a specificity of 63.2%, indicating balanced performance across both classes. The sensitivity suggests that the model correctly identified 64% of individuals diagnosed with Alzheimer’s, which is a significant improvement compared to the initial model that failed to detect any positive cases. The positive predictive value (63.5%) and negative predictive value (63.7%) indicate the model’s moderate reliability in making both positive and negative predictions. While the overall agreement (Kappa = 0.27) is considered fair, the adjusted threshold helped the model better capture Alzheimer’s cases, making it more suitable for contexts where early identification is critical.
+
+
+### LDA COMPARED BETWEEN ORIGINAL/ SELECTED FEATURES AND SCALED/RESAMPLED DATASETS
+
+```{r lda model}
+# Get the model
+lda_model <- lda(Diagnosis ~., data = train_data)
+
+# Get full prediction object
+lda_preds <- predict(lda_model, newdata = test_data)
+
+# Extract predicted class
+predicted_classes_lda <- lda_preds$class
+
+# Confusion matrix
+confusionMatrix(predicted_classes_lda, test_data$Diagnosis, positive = "Yes")
+
+# Extract posterior probability for class "Yes"
+predicted_probs_lda <- lda_preds$posterior[, "Yes"]
+
+# AUC and ROC
+roc_obj_lda <- roc(test_data$Diagnosis, predicted_probs_lda)
+auc(roc_obj_lda)
+
+```
+
+Plot to find threshold
+```{r plot for threshold lda}
+# Create a range of thresholds to evaluate
+thresholds_lda <- seq(0.1, 0.9, by = 0.01)
+
+# Create a dataframe to store results
+threshold_results_lda <- data.frame(Threshold = thresholds_lda,
+                                 Sensitivity = NA,
+                                 Specificity = NA)
+
+# Loop through each threshold and compute confusion matrix stats
+for (i in seq_along(thresholds_lda)) {
+  t <- thresholds_lda[i]
+  predicted_class_lda <- ifelse(predicted_probs_lda > t, "Yes", "No")
+  predicted_class_lda <- factor(predicted_class_lda, levels = c("No", "Yes"))
+  cm_lda <- confusionMatrix(predicted_class_lda, test_data$Diagnosis, positive = "Yes")
+  threshold_results_lda$Sensitivity[i] <- cm_lda$byClass["Sensitivity"]
+  threshold_results_lda$Specificity[i] <- cm_lda$byClass["Specificity"]
+}
+
+# Plot
+ggplot(threshold_results_lda, aes(x = Threshold)) +
+  geom_line(aes(y = Sensitivity), color = "blue", size = 1.2) +
+  geom_line(aes(y = Specificity), color = "red", size = 1.2) +
+  labs(title = "Sensitivity & Specificity vs Threshold",
+       y = "Value", x = "Threshold") +
+  theme_minimal() +
+  geom_vline(xintercept = 0.5, linetype = "dashed", color = "gray") +
+  annotate("text", x = 0.5, y = 0.5, label = "Default threshold = 0.5", vjust = -1)
+```
+
+Find the optimal threshold and apply it.
+```{r find optimal threshold lda}
+# Create ROC object
+roc_obj_lda <- roc(test_data$Diagnosis, predicted_probs_lda)
+
+# Get threshold that maximizes Youden’s Index
+optimal_coords_lda <- coords(roc_obj_lda, x = "best", best.method = "youden", transpose = FALSE)
+
+# View optimal threshold
+optimal_coords_lda
+
+# Use the optimal threshold from above
+optimal_threshold_lda <- as.numeric(optimal_coords_lda["threshold"])
+
+# Apply it
+final_pred_classes_lda <- ifelse(predicted_probs_lda > optimal_threshold_lda, "Yes", "No")
+final_pred_classes_lda <- factor(final_pred_classes_lda, levels = c("No", "Yes"))
+
+# New confusion matrix
+confusionMatrix(final_pred_classes_lda, test_data$Diagnosis, positive = "Yes")
+
+```
+
+Train a new LDA model with the important features we extracted from the stepwise 
+selection in earlier stages.
+
+```{r model lda2}
+lda_model_2<-lda(Diagnosis ~ `Urban.vs.Rural.Living`+ `Air.Pollution.Exposure`+ `Income.Level`+ Country + `Family.History.of.Alzheimer.s`+ `Genetic.Risk.Factor..APOE.ε4.allele.`+ Age, data = train_data)
+
+# Get full prediction object
+lda_preds_2 <- predict(lda_model_2, newdata = test_data)
+
+# Extract predicted class
+predicted_classes_lda_2 <- lda_preds_2$class
+
+# Confusion matrix
+confusionMatrix(predicted_classes_lda_2, test_data$Diagnosis, positive = "Yes")
+
+# Extract posterior probability for class "Yes"
+predicted_probs_lda_2 <- lda_preds_2$posterior[, "Yes"]
+
+# AUC and ROC
+roc_obj_lda_2 <- roc(test_data$Diagnosis, predicted_probs_lda_2)
+auc(roc_obj_lda_2)
+
+# Create a range of thresholds to evaluate
+thresholds_lda_2 <- seq(0.1, 0.9, by = 0.01)
+
+# Create a dataframe to store results
+threshold_results_lda_2 <- data.frame(Threshold = thresholds_lda_2,
+                                 Sensitivity = NA,
+                                 Specificity = NA)
+
+# Loop through each threshold and compute confusion matrix stats
+for (i in seq_along(thresholds_lda_2)) {
+  t <- thresholds_lda_2[i]
+  predicted_class_lda_2 <- ifelse(predicted_probs_lda_2 > t, "Yes", "No")
+  predicted_class_lda_2 <- factor(predicted_class_lda_2, levels = c("No", "Yes"))
+  cm_lda_2 <- confusionMatrix(predicted_class_lda_2, test_data$Diagnosis, positive = "Yes")
+  threshold_results_lda_2$Sensitivity[i] <- cm_lda_2$byClass["Sensitivity"]
+  threshold_results_lda_2$Specificity[i] <- cm_lda_2$byClass["Specificity"]
+}
+
+# Plot
+ggplot(threshold_results_lda_2, aes(x = Threshold)) +
+  geom_line(aes(y = Sensitivity), color = "blue", size = 1.2) +
+  geom_line(aes(y = Specificity), color = "red", size = 1.2) +
+  labs(title = "Sensitivity & Specificity vs Threshold",
+       y = "Value", x = "Threshold") +
+  theme_minimal() +
+  geom_vline(xintercept = 0.5, linetype = "dashed", color = "gray") +
+  annotate("text", x = 0.5, y = 0.5, label = "Default threshold = 0.5", vjust = -1)
+
+# Create ROC object
+roc_obj_lda_2 <- roc(test_data$Diagnosis, predicted_probs_lda_2)
+
+# Get threshold that maximizes Youden’s Index
+optimal_coords_lda_2 <- coords(roc_obj_lda_2, x = "best", best.method = "youden", transpose = FALSE)
+
+# View optimal threshold
+optimal_coords_lda_2
+
+# Use the optimal threshold from above
+optimal_threshold_lda_2 <- as.numeric(optimal_coords_lda_2["threshold"])
+
+# Apply it
+final_pred_classes_lda_2 <- ifelse(predicted_probs_lda_2 > optimal_threshold_lda_2, "Yes", "No")
+final_pred_classes_lda_2 <- factor(final_pred_classes_lda_2, levels = c("No", "Yes"))
+
+# New confusion matrix
+confusionMatrix(final_pred_classes_lda_2, test_data$Diagnosis, positive = "Yes")
+```
+
+Last step in our analysis for LDA modeling is to apply the scaled and resampled dataset
+on the last model we made using LDA.
+
+
+```{r threshold for final dataset and lda model 2}
+# Get full prediction output
+lda2_pred_final <- predict(lda_model_2, newdata = train_final)
+
+# Extract posterior probabilities for class "Yes"
+train_final_probs <- lda2_pred_final$posterior[, "Yes"]
+
+#Find optimal threshold
+roc_obj <- roc(train_final$Diagnosis, train_final_probs)
+coords(roc_obj, x = "best", best.method = "youden")
+
+#use new threshold
+optimal_threshold <- coords(roc_obj, x = "best", best.method = "youden")$threshold[1]
+optimal_threshold
+```
+
+
+```{r prediction for final model}
+# Make sure Diagnosis is a factor with the right levels
+train_final$Diagnosis <- factor(train_final$Diagnosis, levels = c("No", "Yes"))
+
+# Apply optimal threshold to get predicted classes
+train_final_pred <- ifelse(train_final_probs > optimal_threshold, "Yes", "No")
+train_final_pred <- factor(train_final_pred, levels = c("No", "Yes"))
+
+# Confusion matrix
+confusionMatrix(train_final_pred, train_final$Diagnosis, positive = "Yes")
+```
